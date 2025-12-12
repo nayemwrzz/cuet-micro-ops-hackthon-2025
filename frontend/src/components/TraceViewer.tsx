@@ -22,54 +22,65 @@ export default function TraceViewer() {
     import.meta.env.VITE_JAEGER_UI_URL || "http://localhost:16686";
 
   // Fetch recent traces from Jaeger via backend proxy (bypasses CORS)
-  const { 
-    data: jaegerTraces, 
+  const {
+    data: jaegerTraces,
     refetch: refetchTraces,
     isLoading: isLoadingTraces,
-    error: tracesError 
+    error: tracesError,
   } = useQuery({
     queryKey: ["jaeger-traces"],
     queryFn: async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
-        console.log("🔵 Fetching traces via backend proxy:", `${apiUrl}/v1/jaeger/traces`);
-        
+        console.log(
+          "🔵 Fetching traces via backend proxy:",
+          `${apiUrl}/v1/jaeger/traces`,
+        );
+
         // Try multiple service names via backend proxy
         const services = [
           "delineate-observability-dashboard",
           "delineate-hackathon-challenge",
         ];
-        
+
         let allTraces: JaegerTrace[] = [];
-        
+
         for (const service of services) {
           try {
             const url = `${apiUrl}/v1/jaeger/traces?service=${service}&limit=20`;
             console.log("🔵 Trying service:", service);
-            
+
             const response = await fetch(url);
             console.log("🔵 Response status:", response.status);
-            
+
             if (!response.ok) {
-              console.warn(`⚠️ Failed to fetch traces for ${service}:`, response.status);
+              console.warn(
+                `⚠️ Failed to fetch traces for ${service}:`,
+                response.status,
+              );
               continue;
             }
-            
+
             const data = await response.json();
             console.log("🔵 Response data:", data);
-            
+
             if (data.data && Array.isArray(data.data)) {
               allTraces = [...allTraces, ...data.data];
               console.log(`✅ Found ${data.data.length} traces for ${service}`);
             }
           } catch (serviceError) {
-            console.warn(`⚠️ Error fetching traces for ${service}:`, serviceError);
+            console.warn(
+              `⚠️ Error fetching traces for ${service}:`,
+              serviceError,
+            );
           }
         }
-        
+
         // If no traces found, try without service filter via backend proxy
         if (allTraces.length === 0) {
-          console.log("🔵 Trying to fetch all traces (no service filter) via backend proxy");
+          console.log(
+            "🔵 Trying to fetch all traces (no service filter) via backend proxy",
+          );
           try {
             const url = `${apiUrl}/v1/jaeger/traces?limit=20`;
             console.log("🔵 Fetching all traces from:", url);
@@ -84,13 +95,17 @@ export default function TraceViewer() {
               }
             } else {
               const errorText = await response.text();
-              console.error("❌ Backend proxy error:", response.status, errorText);
+              console.error(
+                "❌ Backend proxy error:",
+                response.status,
+                errorText,
+              );
             }
           } catch (error) {
             console.error("❌ Failed to fetch all traces:", error);
           }
         }
-        
+
         console.log("✅ Total traces found:", allTraces.length);
         return allTraces;
       } catch (error) {
@@ -104,18 +119,20 @@ export default function TraceViewer() {
 
   const handleCreateTrace = () => {
     console.log("🔵 Create Test Trace button clicked");
-    
+
     try {
       // Check if OpenTelemetry is available
       const otelEndpoint = import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT;
       if (!otelEndpoint) {
         console.error("❌ OpenTelemetry endpoint not configured");
-        alert("OpenTelemetry is not configured. Please set VITE_OTEL_EXPORTER_OTLP_ENDPOINT environment variable.");
+        alert(
+          "OpenTelemetry is not configured. Please set VITE_OTEL_EXPORTER_OTLP_ENDPOINT environment variable.",
+        );
         return;
       }
 
       console.log("🔵 OpenTelemetry endpoint:", otelEndpoint);
-      
+
       // Get tracer
       const tracer = trace.getTracer("delineate-frontend");
       console.log("🔵 Tracer obtained:", tracer);
@@ -127,103 +144,130 @@ export default function TraceViewer() {
       }
 
       // Create span
-      tracer.startActiveSpan("user.action.create_test_trace", {
-        attributes: {
-          action: "test_trace_creation",
-          source: "trace_viewer",
-          timestamp: new Date().toISOString(),
-        },
-      }, (span) => {
-        console.log("🔵 Span created:", span);
-        
-        const spanContext = span.spanContext();
-        console.log("🔵 Span context:", spanContext);
-        
-        // Check if traceId exists (it should always exist for a valid span)
-        if (spanContext.traceId) {
-          const newTraceId = spanContext.traceId;
-          console.log("✅ Trace created with ID:", newTraceId);
-          setTraceId(newTraceId);
-          if (!activeTraces.includes(newTraceId)) {
-            setActiveTraces((prev) => [newTraceId, ...prev].slice(0, 10));
-          }
-        } else {
-          console.warn("⚠️ Trace created but traceId is missing", {
-            traceId: spanContext.traceId,
-            spanId: spanContext.spanId,
-            traceFlags: spanContext.traceFlags,
-          });
-        }
-
-        // Simulate some work and add child span
-        tracer.startActiveSpan("test_work", {
+      tracer.startActiveSpan(
+        "user.action.create_test_trace",
+        {
           attributes: {
-            work_type: "simulation",
+            action: "test_trace_creation",
+            source: "trace_viewer",
+            timestamp: new Date().toISOString(),
           },
-        }, (childSpan) => {
-          console.log("🔵 Child span created");
-          setTimeout(async () => {
-            childSpan.end();
-            span.end();
-            
-            // Force flush traces to Jaeger immediately
-            try {
-              const provider = (window as any).__OTEL_TRACER_PROVIDER__;
-              if (provider) {
-                // Try to get the span processor and flush it
-                const spanProcessors = (provider as any).spanProcessors || [];
-                for (const processor of spanProcessors) {
-                  if (processor && typeof processor.forceFlush === 'function') {
-                    await processor.forceFlush();
-                    console.log("✅ Span processor flushed");
-                  }
-                }
-                
-                // Also try provider forceFlush
-                if (typeof provider.forceFlush === 'function') {
-                  await provider.forceFlush();
-                  console.log("✅ Provider flushed");
-                }
-              }
-            } catch (flushError) {
-              console.warn("⚠️ Could not flush traces:", flushError);
+        },
+        (span) => {
+          console.log("🔵 Span created:", span);
+
+          const spanContext = span.spanContext();
+          console.log("🔵 Span context:", spanContext);
+
+          // Check if traceId exists (it should always exist for a valid span)
+          if (spanContext.traceId) {
+            const newTraceId = spanContext.traceId;
+            console.log("✅ Trace created with ID:", newTraceId);
+            setTraceId(newTraceId);
+            if (!activeTraces.includes(newTraceId)) {
+              setActiveTraces((prev) => [newTraceId, ...prev].slice(0, 10));
             }
-            
-            console.log("✅ Trace completed");
-            console.log("🔵 Trace ID (from span):", spanContext.traceId);
-            console.log("🔵 Span ID:", spanContext.spanId);
-            
-            // Wait a bit for export to complete, then check what was actually exported
-            setTimeout(() => {
-              const exportedTraceIds = (window as any).__LAST_EXPORTED_TRACE_IDS__;
-              if (exportedTraceIds && exportedTraceIds.length > 0) {
-                const actualTraceId = exportedTraceIds[0]; // First trace ID that was exported
-                console.log("🔵 Trace ID (actually exported to Jaeger):", actualTraceId);
-                
-                // Update the displayed trace ID to match what's in Jaeger
-                if (actualTraceId && actualTraceId !== spanContext.traceId) {
-                  console.log("⚠️ Trace ID mismatch! Updating to match Jaeger...");
-                  setTraceId(actualTraceId);
-                } else {
-                  setTraceId(spanContext.traceId);
+          } else {
+            console.warn("⚠️ Trace created but traceId is missing", {
+              traceId: spanContext.traceId,
+              spanId: spanContext.spanId,
+              traceFlags: spanContext.traceFlags,
+            });
+          }
+
+          // Simulate some work and add child span
+          tracer.startActiveSpan(
+            "test_work",
+            {
+              attributes: {
+                work_type: "simulation",
+              },
+            },
+            (childSpan) => {
+              console.log("🔵 Child span created");
+              setTimeout(async () => {
+                childSpan.end();
+                span.end();
+
+                // Force flush traces to Jaeger immediately
+                try {
+                  const provider = (window as any).__OTEL_TRACER_PROVIDER__;
+                  if (provider) {
+                    // Try to get the span processor and flush it
+                    const spanProcessors =
+                      (provider as any).spanProcessors || [];
+                    for (const processor of spanProcessors) {
+                      if (
+                        processor &&
+                        typeof processor.forceFlush === "function"
+                      ) {
+                        await processor.forceFlush();
+                        console.log("✅ Span processor flushed");
+                      }
+                    }
+
+                    // Also try provider forceFlush
+                    if (typeof provider.forceFlush === "function") {
+                      await provider.forceFlush();
+                      console.log("✅ Provider flushed");
+                    }
+                  }
+                } catch (flushError) {
+                  console.warn("⚠️ Could not flush traces:", flushError);
                 }
-              } else {
-                setTraceId(spanContext.traceId);
-              }
-            }, 200);
-            
-            console.log("💡 Check browser Network tab for POST requests to http://localhost:4318/v1/traces");
-            console.log("💡 Wait 5-10 seconds, then search Jaeger UI for the trace ID shown above");
-          }, 100);
-        });
-      });
+
+                console.log("✅ Trace completed");
+                console.log("🔵 Trace ID (from span):", spanContext.traceId);
+                console.log("🔵 Span ID:", spanContext.spanId);
+
+                // Wait a bit for export to complete, then check what was actually exported
+                setTimeout(() => {
+                  const exportedTraceIds = (window as any)
+                    .__LAST_EXPORTED_TRACE_IDS__;
+                  if (exportedTraceIds && exportedTraceIds.length > 0) {
+                    const actualTraceId = exportedTraceIds[0]; // First trace ID that was exported
+                    console.log(
+                      "🔵 Trace ID (actually exported to Jaeger):",
+                      actualTraceId,
+                    );
+
+                    // Update the displayed trace ID to match what's in Jaeger
+                    if (
+                      actualTraceId &&
+                      actualTraceId !== spanContext.traceId
+                    ) {
+                      console.log(
+                        "⚠️ Trace ID mismatch! Updating to match Jaeger...",
+                      );
+                      setTraceId(actualTraceId);
+                    } else {
+                      setTraceId(spanContext.traceId);
+                    }
+                  } else {
+                    setTraceId(spanContext.traceId);
+                  }
+                }, 200);
+
+                console.log(
+                  "💡 Check browser Network tab for POST requests to http://localhost:4318/v1/traces",
+                );
+                console.log(
+                  "💡 Wait 5-10 seconds, then search Jaeger UI for the trace ID shown above",
+                );
+              }, 100);
+            },
+          );
+        },
+      );
     } catch (error) {
       console.error("❌ Failed to create trace:", error);
       console.error("❌ Error details:", {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
-      alert(`Failed to create trace: ${error instanceof Error ? error.message : String(error)}\n\nCheck browser console for details.`);
+      alert(
+        `Failed to create trace: ${error instanceof Error ? error.message : String(error)}\n\nCheck browser console for details.`,
+      );
     }
   };
 
@@ -303,7 +347,9 @@ export default function TraceViewer() {
           <div className="text-center py-8 text-red-500">
             <p>Error loading traces from Jaeger</p>
             <p className="text-xs mt-2">
-              {tracesError instanceof Error ? tracesError.message : String(tracesError)}
+              {tracesError instanceof Error
+                ? tracesError.message
+                : String(tracesError)}
             </p>
             <p className="text-xs mt-2">
               Check browser console (F12) for details
@@ -339,7 +385,10 @@ export default function TraceViewer() {
                   <button
                     onClick={() => {
                       setTraceId(trace.traceID);
-                      window.open(`${jaegerUrl}/trace/${trace.traceID}`, "_blank");
+                      window.open(
+                        `${jaegerUrl}/trace/${trace.traceID}`,
+                        "_blank",
+                      );
                     }}
                     className="px-4 py-1 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors ml-2 flex-shrink-0"
                   >
@@ -353,7 +402,8 @@ export default function TraceViewer() {
           <div className="text-center py-8 text-gray-500">
             <p>No traces found in Jaeger</p>
             <p className="text-xs mt-2">
-              Tried services: delineate-observability-dashboard, delineate-hackathon-challenge
+              Tried services: delineate-observability-dashboard,
+              delineate-hackathon-challenge
             </p>
             <p className="text-xs mt-1">
               Check browser console (F12) for API call details

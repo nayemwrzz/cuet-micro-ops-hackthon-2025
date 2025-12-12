@@ -15,4 +15,3 @@ datasources:
     access: proxy
     url: http://delineate-jaeger:16686
     editable: true
-

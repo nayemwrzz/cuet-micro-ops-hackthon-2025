@@ -55,7 +55,7 @@ api.interceptors.request.use(
   (error) => {
     console.error("[API] Request error:", error);
     return Promise.reject(error);
-  }
+  },
 );
 
 // Response interceptor: Handle errors and capture to Sentry
@@ -110,7 +110,7 @@ api.interceptors.response.use(
       // Network error - request was made but no response received
       const errorMessage = error.message || "Network Error";
       const apiUrl = error.config?.baseURL || API_URL;
-      
+
       Sentry.captureException(error, {
         tags: {
           error_type: "network_error",

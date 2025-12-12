@@ -30,7 +30,8 @@ export default function HealthStatus() {
   const health = data?.data;
   // Backend returns: { status: "healthy", checks: { storage: "ok" } }
   const isHealthy = health?.status === "healthy" || health?.status === "ok";
-  const storageHealthy = health?.checks?.storage === "ok" || health?.storage?.status === "ok";
+  const storageHealthy =
+    health?.checks?.storage === "ok" || health?.storage?.status === "ok";
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -92,9 +93,7 @@ export default function HealthStatus() {
           <p className="text-2xl font-bold text-gray-900">
             {import.meta.env.VITE_NODE_ENV || "development"}
           </p>
-          <p className="text-xs text-gray-500 mt-1">
-            {health?.version }
-          </p>
+          <p className="text-xs text-gray-500 mt-1">{health?.version}</p>
         </div>
       </div>
     </div>

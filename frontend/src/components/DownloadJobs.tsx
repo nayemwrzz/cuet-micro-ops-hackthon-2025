@@ -86,13 +86,19 @@ export default function DownloadJobs() {
             ? {
                 ...j,
                 status: data?.status || "completed",
-                completedAt: data?.status === "completed" ? new Date().toISOString() : undefined,
+                completedAt:
+                  data?.status === "completed"
+                    ? new Date().toISOString()
+                    : undefined,
                 duration: data?.processingTimeMs,
-                error: data?.status === "failed" ? "File not found in storage" : undefined,
+                error:
+                  data?.status === "failed"
+                    ? "File not found in storage"
+                    : undefined,
                 progress: data?.status === "completed" ? 100 : j.progress || 0,
               }
-            : j
-        )
+            : j,
+        ),
       );
       queryClient.invalidateQueries({ queryKey: ["download", fileId] });
     },
@@ -118,9 +124,7 @@ export default function DownloadJobs() {
       } else {
         // Ensure startTime is set in the job
         startTime = Date.now();
-        return prev.map((j) =>
-          j.fileId === fileId ? { ...j, startTime } : j
-        );
+        return prev.map((j) => (j.fileId === fileId ? { ...j, startTime } : j));
       }
       return prev;
     });
@@ -142,28 +146,28 @@ export default function DownloadJobs() {
         // Always use the job's startTime (it should be set)
         const currentStartTime = job.startTime || startTime;
         const elapsed = Date.now() - currentStartTime;
-        
+
         // Only update progress if job is still in progress
         if (job.status === "in_progress" || job.status === "pending") {
           // Calculate progress: (elapsed / avgDelay) * 100
           // Cap at 95% until backend confirms completion
           let progress = (elapsed / avgDelay) * 100;
           progress = Math.min(95, Math.max(0, progress)); // Clamp between 0 and 95
-          
+
           // Round to 1 decimal for smoother display
           progress = Math.round(progress * 10) / 10;
 
           return prev.map((j) =>
             j.fileId === fileId
-              ? { 
-                  ...j, 
+              ? {
+                  ...j,
                   progress,
-                  status: elapsed > 100 ? "in_progress" : j.status // Auto-update status after 100ms
+                  status: elapsed > 100 ? "in_progress" : j.status, // Auto-update status after 100ms
                 }
-              : j
+              : j,
           );
         }
-        
+
         // Don't update progress if job is completed or failed
         return prev;
       });
@@ -177,14 +181,14 @@ export default function DownloadJobs() {
     statusIntervalId = setInterval(async () => {
       try {
         const job = await pollJobStatus(fileId);
-        
+
         setJobs((prev) => {
           const existingJob = prev.find((j) => j.fileId === fileId);
           const currentStartTime = existingJob?.startTime || startTime;
-          
+
           // Only update status, keep progress calculation running
           let finalProgress = existingJob?.progress || 0;
-          
+
           if (job.status === "completed") {
             finalProgress = 100;
             // Stop progress updates when completed
@@ -194,15 +198,15 @@ export default function DownloadJobs() {
             if (progressIntervalId) clearInterval(progressIntervalId);
           }
 
-          return prev.map((j) => 
-            j.fileId === fileId 
-              ? { 
-                  ...j, 
-                  ...job, 
+          return prev.map((j) =>
+            j.fileId === fileId
+              ? {
+                  ...j,
+                  ...job,
                   progress: finalProgress,
-                  startTime: j.startTime || currentStartTime // Preserve startTime
-                } 
-              : j
+                  startTime: j.startTime || currentStartTime, // Preserve startTime
+                }
+              : j,
           );
         });
 
