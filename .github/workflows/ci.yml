@@ -125,7 +125,6 @@ jobs:
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
     environment:
       name: production
-      url: ${{ secrets.DEPLOYMENT_URL || '' }}
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -138,14 +137,15 @@ jobs:
         # Examples: Docker Hub, GitHub Container Registry (GHCR), AWS ECR, etc.
         if: false # Set to true and configure secrets below to enable
         uses: docker/login-action@v3
-        with:
-          # For Docker Hub:
-          # username: ${{ secrets.DOCKER_USERNAME }}
-          # password: ${{ secrets.DOCKER_PASSWORD }}
-          # For GHCR:
-          # registry: ghcr.io
-          # username: ${{ github.actor }}
-          # password: ${{ secrets.GITHUB_TOKEN }}
+        # Configure these when enabling:
+        # with:
+        #   # For Docker Hub:
+        #   username: ${{ secrets.DOCKER_USERNAME }}
+        #   password: ${{ secrets.DOCKER_PASSWORD }}
+        #   # For GHCR:
+        #   # registry: ghcr.io
+        #   # username: ${{ github.actor }}
+        #   # password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🏗️ Build and Push Docker Image (Optional)
         if: false # Set to true if registry login is configured above
