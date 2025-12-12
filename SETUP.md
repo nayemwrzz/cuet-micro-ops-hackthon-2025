@@ -42,6 +42,7 @@ npm install
 This will install all Node.js dependencies listed in `package.json`.
 
 **Expected Output**:
+
 ```
 added 320 packages, and audited 321 packages in 21s
 ```
@@ -154,17 +155,17 @@ npm run test:e2e
 
 ## Available Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server (5-15s delays, hot reload) |
-| `npm run start` | Start production server (10-120s delays) |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Fix linting issues automatically |
-| `npm run format` | Format code with Prettier |
-| `npm run format:check` | Check code formatting |
-| `npm run test:e2e` | Run end-to-end tests |
-| `npm run docker:dev` | Start Docker Compose (development) |
-| `npm run docker:prod` | Start Docker Compose (production) |
+| Command                | Description                                 |
+| ---------------------- | ------------------------------------------- |
+| `npm run dev`          | Start dev server (5-15s delays, hot reload) |
+| `npm run start`        | Start production server (10-120s delays)    |
+| `npm run lint`         | Run ESLint                                  |
+| `npm run lint:fix`     | Fix linting issues automatically            |
+| `npm run format`       | Format code with Prettier                   |
+| `npm run format:check` | Check code formatting                       |
+| `npm run test:e2e`     | Run end-to-end tests                        |
+| `npm run docker:dev`   | Start Docker Compose (development)          |
+| `npm run docker:prod`  | Start Docker Compose (production)           |
 
 ---
 
@@ -173,6 +174,7 @@ npm run test:e2e
 ### Issue: `npm install` fails
 
 **Solution**:
+
 ```bash
 # Clear npm cache
 npm cache clean --force
@@ -187,6 +189,7 @@ npm install
 **Error**: `EADDRINUSE: address already in use :::3000`
 
 **Solution**:
+
 ```bash
 # Windows
 netstat -ano | findstr :3000
@@ -202,6 +205,7 @@ PORT=3001
 ### Issue: Docker not starting
 
 **Solution**:
+
 ```bash
 # Check if Docker is running
 docker ps
@@ -214,6 +218,7 @@ docker compose -f docker/compose.dev.yml up --build
 ### Issue: MinIO connection errors
 
 **Solution**:
+
 ```bash
 # Check if MinIO is running
 docker ps | grep minio
@@ -290,4 +295,3 @@ See `.env` file or README.md for complete list.
 **Setup Complete!** 🎉
 
 If you encounter any issues, check the troubleshooting section or contact your team.
-

@@ -27,6 +27,7 @@ curl http://localhost:3000/health
 ```
 
 **Expected Result**:
+
 ```json
 {
   "status": "ok",
@@ -47,6 +48,7 @@ curl http://localhost:3000/health
 ### Test 1: Initiate Download and Track Status
 
 **Steps**:
+
 1. Open dashboard: http://localhost:5173
 2. In "Download Jobs" panel, enter file ID: `12345`
 3. Click "Start Download"
@@ -54,12 +56,14 @@ curl http://localhost:3000/health
    - `PENDING` → `IN_PROGRESS` → `COMPLETED` (or `FAILED`)
 
 **Expected Results**:
+
 - Job appears in list immediately
 - Status updates automatically every 2 seconds
 - Trace ID link appears (if trace is available)
 - Job details show timestamps and duration
 
 **API Verification**:
+
 ```bash
 # Check job status
 curl http://localhost:3000/v1/download/status/12345
@@ -70,18 +74,21 @@ curl http://localhost:3000/v1/download/status/12345
 ### Test 2: Error Tracking (Sentry)
 
 **Steps**:
+
 1. Open dashboard: http://localhost:5173
 2. Click "Test Error (Sentry)" button in header
 3. Check "Error Log" panel
 4. (Optional) Check Sentry dashboard if DSN is configured
 
 **Expected Results**:
+
 - Error appears in Error Log panel immediately
 - Error shows trace ID
 - Error details modal shows full context when clicked
 - If Sentry configured, error appears in Sentry dashboard
 
 **API Verification**:
+
 ```bash
 # Trigger test error
 curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
@@ -90,6 +97,7 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
 ```
 
 **Expected Response**:
+
 ```json
 {
   "error": "Internal Server Error",
@@ -102,6 +110,7 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
 ### Test 3: Trace Correlation
 
 **Steps**:
+
 1. Start a download (see Test 1)
 2. Click "View Trace in Jaeger" link in job details
 3. In Jaeger UI, verify:
@@ -110,12 +119,14 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
    - Backend processing spans
 
 **Expected Results**:
+
 - Trace link appears in job details
 - Jaeger UI opens with full trace
 - All spans are linked by same trace ID
 - Trace shows end-to-end flow
 
 **Manual Trace Check**:
+
 1. Open Jaeger UI: http://localhost:16686
 2. Search for service: `delineate-hackathon-challenge`
 3. Find recent traces
@@ -126,6 +137,7 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
 ### Test 4: Performance Metrics
 
 **Steps**:
+
 1. Make several API calls:
    - Start multiple downloads
    - Check health status
@@ -134,6 +146,7 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
 3. Observe charts updating
 
 **Expected Results**:
+
 - Total Requests counter increases
 - Success Rate shows percentage
 - Average Response Time calculated
@@ -145,12 +158,14 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
 ### Test 5: Trace Viewer
 
 **Steps**:
+
 1. Open "Trace Viewer" tab in dashboard
 2. Click "Create Test Trace" button
 3. Click "View in Jaeger" button
 4. Or paste a trace ID from Download Jobs panel
 
 **Expected Results**:
+
 - Trace ID generated and displayed
 - "View in Jaeger" opens Jaeger UI
 - Trace appears in recent traces list
@@ -202,13 +217,13 @@ curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
 
 ## Expected Results Summary
 
-| Test | Dashboard | API | Jaeger | Sentry |
-|------|-----------|-----|--------|--------|
-| Health Status | ✅ Green indicators | ✅ 200 OK | - | - |
-| Download Jobs | ✅ Job list updates | ✅ Status endpoint works | ✅ Traces appear | - |
-| Error Tracking | ✅ Errors in log | ✅ Error response | ✅ Trace with error | ✅ Error captured |
-| Trace Correlation | ✅ Trace IDs visible | ✅ traceparent header | ✅ Full trace | ✅ Trace ID in tags |
-| Performance Metrics | ✅ Charts update | - | - | - |
+| Test                | Dashboard            | API                      | Jaeger              | Sentry              |
+| ------------------- | -------------------- | ------------------------ | ------------------- | ------------------- |
+| Health Status       | ✅ Green indicators  | ✅ 200 OK                | -                   | -                   |
+| Download Jobs       | ✅ Job list updates  | ✅ Status endpoint works | ✅ Traces appear    | -                   |
+| Error Tracking      | ✅ Errors in log     | ✅ Error response        | ✅ Trace with error | ✅ Error captured   |
+| Trace Correlation   | ✅ Trace IDs visible | ✅ traceparent header    | ✅ Full trace       | ✅ Trace ID in tags |
+| Performance Metrics | ✅ Charts update     | -                        | -                   | -                   |
 
 ---
 
@@ -293,6 +308,7 @@ echo "Tests complete!"
 ```
 
 Run with:
+
 ```bash
 chmod +x test-challenge4.sh
 ./test-challenge4.sh
@@ -329,4 +345,3 @@ chmod +x test-challenge4.sh
 ---
 
 For detailed troubleshooting, see `docs/CHALLENGE_4_IMPLEMENTATION.md`.
-

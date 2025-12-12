@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -10,115 +10,115 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-} from 'recharts'
+} from "recharts";
 
 interface Metric {
-  timestamp: string
-  responseTime: number
-  status: 'success' | 'error'
+  timestamp: string;
+  responseTime: number;
+  status: "success" | "error";
 }
 
 export default function PerformanceMetrics() {
-  const [metrics, setMetrics] = useState<Metric[]>([])
+  const [metrics, setMetrics] = useState<Metric[]>([]);
   const [stats, setStats] = useState({
     totalRequests: 0,
     successRate: 0,
     avgResponseTime: 0,
     p95ResponseTime: 0,
-  })
+  });
 
   // Simulate collecting metrics from API calls
   useEffect(() => {
-    const storedMetrics = localStorage.getItem('performance_metrics')
+    const storedMetrics = localStorage.getItem("performance_metrics");
     if (storedMetrics) {
       try {
-        const parsed = JSON.parse(storedMetrics)
-        setMetrics(parsed)
-        calculateStats(parsed)
+        const parsed = JSON.parse(storedMetrics);
+        setMetrics(parsed);
+        calculateStats(parsed);
       } catch (e) {
-        console.error('Failed to parse metrics:', e)
+        console.error("Failed to parse metrics:", e);
       }
     }
 
     // Intercept fetch/axios calls to collect metrics
-    const originalFetch = window.fetch
+    const originalFetch = window.fetch;
     window.fetch = async function (...args) {
-      const startTime = Date.now()
+      const startTime = Date.now();
       try {
-        const response = await originalFetch.apply(this, args)
-        const endTime = Date.now()
-        const duration = endTime - startTime
+        const response = await originalFetch.apply(this, args);
+        const endTime = Date.now();
+        const duration = endTime - startTime;
 
         const metric: Metric = {
           timestamp: new Date().toISOString(),
           responseTime: duration,
-          status: response.ok ? 'success' : 'error',
-        }
+          status: response.ok ? "success" : "error",
+        };
 
-        const newMetrics = [metric, ...metrics].slice(0, 100) // Keep last 100
-        setMetrics(newMetrics)
-        localStorage.setItem('performance_metrics', JSON.stringify(newMetrics))
-        calculateStats(newMetrics)
+        const newMetrics = [metric, ...metrics].slice(0, 100); // Keep last 100
+        setMetrics(newMetrics);
+        localStorage.setItem("performance_metrics", JSON.stringify(newMetrics));
+        calculateStats(newMetrics);
 
-        return response
+        return response;
       } catch (error) {
-        const endTime = Date.now()
-        const duration = endTime - startTime
+        const endTime = Date.now();
+        const duration = endTime - startTime;
 
         const metric: Metric = {
           timestamp: new Date().toISOString(),
           responseTime: duration,
-          status: 'error',
-        }
+          status: "error",
+        };
 
-        const newMetrics = [metric, ...metrics].slice(0, 100)
-        setMetrics(newMetrics)
-        localStorage.setItem('performance_metrics', JSON.stringify(newMetrics))
-        calculateStats(newMetrics)
+        const newMetrics = [metric, ...metrics].slice(0, 100);
+        setMetrics(newMetrics);
+        localStorage.setItem("performance_metrics", JSON.stringify(newMetrics));
+        calculateStats(newMetrics);
 
-        throw error
+        throw error;
       }
-    }
-  }, [])
+    };
+  }, []);
 
   const calculateStats = (data: Metric[]) => {
-    if (data.length === 0) return
+    if (data.length === 0) return;
 
-    const total = data.length
-    const successful = data.filter((m) => m.status === 'success').length
-    const successRate = (successful / total) * 100
+    const total = data.length;
+    const successful = data.filter((m) => m.status === "success").length;
+    const successRate = (successful / total) * 100;
 
-    const responseTimes = data.map((m) => m.responseTime).sort((a, b) => a - b)
+    const responseTimes = data.map((m) => m.responseTime).sort((a, b) => a - b);
     const avgResponseTime =
-      responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
-    const p95Index = Math.floor(responseTimes.length * 0.95)
-    const p95ResponseTime = responseTimes[p95Index] || 0
+      responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+    const p95Index = Math.floor(responseTimes.length * 0.95);
+    const p95ResponseTime = responseTimes[p95Index] || 0;
 
     setStats({
       totalRequests: total,
       successRate: Math.round(successRate * 100) / 100,
       avgResponseTime: Math.round(avgResponseTime),
       p95ResponseTime: Math.round(p95ResponseTime),
-    })
-  }
+    });
+  };
 
   // Format data for charts
   const chartData = metrics.slice(-20).map((m) => ({
     time: new Date(m.timestamp).toLocaleTimeString(),
     responseTime: m.responseTime,
     status: m.status,
-  }))
+  }));
 
   const statusData = [
     {
-      name: 'Success',
-      count: metrics.filter((m) => m.status === 'success').length,
+      name: "Success",
+      count: metrics.filter((m) => m.status === "success").length,
     },
     {
-      name: 'Error',
-      count: metrics.filter((m) => m.status === 'error').length,
+      name: "Error",
+      count: metrics.filter((m) => m.status === "error").length,
     },
-  ]
+  ];
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -128,19 +128,27 @@ export default function PerformanceMetrics() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="p-4 border rounded-lg">
           <p className="text-sm text-gray-600 mb-1">Total Requests</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.totalRequests}</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {stats.totalRequests}
+          </p>
         </div>
         <div className="p-4 border rounded-lg">
           <p className="text-sm text-gray-600 mb-1">Success Rate</p>
-          <p className="text-2xl font-bold text-green-600">{stats.successRate}%</p>
+          <p className="text-2xl font-bold text-green-600">
+            {stats.successRate}%
+          </p>
         </div>
         <div className="p-4 border rounded-lg">
           <p className="text-sm text-gray-600 mb-1">Avg Response Time</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.avgResponseTime}ms</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {stats.avgResponseTime}ms
+          </p>
         </div>
         <div className="p-4 border rounded-lg">
           <p className="text-sm text-gray-600 mb-1">P95 Response Time</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.p95ResponseTime}ms</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {stats.p95ResponseTime}ms
+          </p>
         </div>
       </div>
 
@@ -186,6 +194,5 @@ export default function PerformanceMetrics() {
         </p>
       )}
     </div>
-  )
+  );
 }
-

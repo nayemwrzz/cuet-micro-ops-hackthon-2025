@@ -10,25 +10,27 @@ This document outlines the observability architecture for the download microserv
 
 ### Chosen Tech Stack
 
-| Component | Technology | Justification |
-|-----------|-----------|---------------|
-| **Frontend** | Vite + React + TypeScript | Fast setup, great DX, TypeScript for type safety |
-| **Styling** | Tailwind CSS | Rapid UI development, modern design |
-| **State Management** | React Query (TanStack Query) | Perfect for API state, caching, polling |
-| **Error Tracking** | Sentry React SDK | Required by Challenge 4, excellent error tracking |
-| **Tracing** | OpenTelemetry JavaScript | Required by Challenge 4, W3C Trace Context |
-| **Visualization** | Recharts | Lightweight charts for metrics |
-| **Backend Tracing** | OpenTelemetry (already exists) | Already integrated in backend |
-| **Trace Viewer** | Jaeger UI (already exists) | Already in Docker Compose |
+| Component            | Technology                     | Justification                                     |
+| -------------------- | ------------------------------ | ------------------------------------------------- |
+| **Frontend**         | Vite + React + TypeScript      | Fast setup, great DX, TypeScript for type safety  |
+| **Styling**          | Tailwind CSS                   | Rapid UI development, modern design               |
+| **State Management** | React Query (TanStack Query)   | Perfect for API state, caching, polling           |
+| **Error Tracking**   | Sentry React SDK               | Required by Challenge 4, excellent error tracking |
+| **Tracing**          | OpenTelemetry JavaScript       | Required by Challenge 4, W3C Trace Context        |
+| **Visualization**    | Recharts                       | Lightweight charts for metrics                    |
+| **Backend Tracing**  | OpenTelemetry (already exists) | Already integrated in backend                     |
+| **Trace Viewer**     | Jaeger UI (already exists)     | Already in Docker Compose                         |
 
 ### Why NOT Prometheus/Grafana/Elasticsearch?
 
 **Reason**: Challenge 4 requirements focus on:
+
 - ✅ Sentry (error tracking) - **Required**
 - ✅ OpenTelemetry (tracing) - **Required**
 - ✅ Jaeger UI (trace viewing) - **Required**
 
 While Prometheus/Grafana would be valuable additions, they're **not explicitly required** by Challenge 4. We focus on:
+
 1. **Meeting all requirements** perfectly
 2. **Bonus features** that enhance without over-complicating
 3. **Time efficiency** for hackathon constraints
@@ -149,24 +151,28 @@ Frontend Dashboard
 ## Implementation Strategy
 
 ### Phase 1: Core Dashboard (Required)
+
 - ✅ React app setup
 - ✅ Health status display
 - ✅ Download jobs list
 - ✅ Basic error display
 
 ### Phase 2: Sentry Integration (Required)
+
 - ✅ Error boundary
 - ✅ API error capture
 - ✅ Custom error logging
 - ✅ Error log panel
 
 ### Phase 3: OpenTelemetry Integration (Required)
+
 - ✅ Frontend SDK setup
 - ✅ Trace propagation
 - ✅ Custom spans
 - ✅ Trace ID display
 
 ### Phase 4: Enhanced Features (Bonus)
+
 - ⭐ Performance metrics visualization
 - ⭐ Real-time updates
 - ⭐ Trace viewer integration
@@ -177,12 +183,14 @@ Frontend Dashboard
 ## Integration Points
 
 ### Backend (Already Implemented)
+
 - ✅ OpenTelemetry SDK initialized
 - ✅ Sentry middleware configured
 - ✅ Request ID tracking
 - ✅ Trace context propagation (via headers)
 
 ### Frontend (To Implement)
+
 - ✅ Sentry React SDK initialization
 - ✅ OpenTelemetry JavaScript SDK
 - ✅ Trace parent header injection
@@ -194,6 +202,7 @@ Frontend Dashboard
 ## Environment Variables
 
 ### Frontend (.env)
+
 ```
 VITE_API_URL=http://localhost:3000
 VITE_SENTRY_DSN=
@@ -206,11 +215,13 @@ VITE_JAEGER_UI_URL=http://localhost:16686
 ## Docker Integration
 
 ### Frontend Service
+
 - Runs on port 5173 (Vite dev server)
 - Connects to API via service name
 - Shares network with backend, Jaeger, MinIO
 
 ### Services in Compose
+
 - ✅ delineate-app (backend)
 - ✅ minio (storage)
 - ✅ delineate-jaeger (traces)
@@ -221,6 +232,7 @@ VITE_JAEGER_UI_URL=http://localhost:16686
 ## Testing Strategy
 
 ### Manual Testing
+
 1. Start all services
 2. Open dashboard
 3. Initiate download
@@ -230,6 +242,7 @@ VITE_JAEGER_UI_URL=http://localhost:16686
 7. Check Jaeger for trace
 
 ### Automated Testing (Optional)
+
 - Component tests for dashboard widgets
 - Integration tests for Sentry capture
 - E2E tests for trace propagation
@@ -237,4 +250,3 @@ VITE_JAEGER_UI_URL=http://localhost:16686
 ---
 
 This design focuses on **meeting Challenge 4 requirements** while providing a **production-ready observability dashboard** that demonstrates deep understanding of distributed tracing and error tracking.
-

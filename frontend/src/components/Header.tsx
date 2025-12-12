@@ -1,30 +1,30 @@
-import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '../lib/api'
-import { trace } from '@opentelemetry/api'
+import { useQuery } from "@tanstack/react-query";
+import { apiClient } from "../lib/api";
+import { trace } from "@opentelemetry/api";
 
 export default function Header() {
   const { data: healthData } = useQuery({
-    queryKey: ['health'],
+    queryKey: ["health"],
     queryFn: () => apiClient.getHealth(),
     refetchInterval: 30000, // Poll every 30s
-  })
+  });
 
   const handleTestError = () => {
-    const tracer = trace.getTracer('delineate-frontend')
-    tracer.startActiveSpan('user.click.test_error', async (span) => {
+    const tracer = trace.getTracer("delineate-frontend");
+    tracer.startActiveSpan("user.click.test_error", async (span) => {
       try {
-        span.setAttribute('action', 'test_sentry_error')
-        await apiClient.testError()
+        span.setAttribute("action", "test_sentry_error");
+        await apiClient.testError();
       } catch (error) {
         // Error will be captured by Sentry interceptor
-        console.error('Test error triggered:', error)
+        console.error("Test error triggered:", error);
       } finally {
-        span.end()
+        span.end();
       }
-    })
-  }
+    });
+  };
 
-  const isHealthy = healthData?.data?.status === 'ok'
+  const isHealthy = healthData?.data?.status === "ok";
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
@@ -37,11 +37,11 @@ export default function Header() {
             <div className="flex items-center space-x-2">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  isHealthy ? 'bg-green-500' : 'bg-red-500'
+                  isHealthy ? "bg-green-500" : "bg-red-500"
                 }`}
               />
               <span className="text-sm text-gray-600">
-                {isHealthy ? 'System Healthy' : 'System Unhealthy'}
+                {isHealthy ? "System Healthy" : "System Unhealthy"}
               </span>
             </div>
           </div>
@@ -52,11 +52,13 @@ export default function Header() {
               ) : (
                 <span className="text-yellow-600">⚠ Sentry Disabled</span>
               )}
-              {' | '}
+              {" | "}
               {import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT ? (
                 <span className="text-green-600">✓ OpenTelemetry Active</span>
               ) : (
-                <span className="text-yellow-600">⚠ OpenTelemetry Disabled</span>
+                <span className="text-yellow-600">
+                  ⚠ OpenTelemetry Disabled
+                </span>
               )}
             </div>
             <button
@@ -69,6 +71,5 @@ export default function Header() {
         </div>
       </div>
     </header>
-  )
+  );
 }
-

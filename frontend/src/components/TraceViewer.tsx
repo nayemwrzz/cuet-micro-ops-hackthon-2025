@@ -1,40 +1,41 @@
-import { useState } from 'react'
-import { trace } from '@opentelemetry/api'
-import { extractTraceId } from '../lib/utils'
+import { useState } from "react";
+import { trace } from "@opentelemetry/api";
+import { extractTraceId } from "../lib/utils";
 
 export default function TraceViewer() {
-  const [traceId, setTraceId] = useState<string>('')
-  const [activeTraces, setActiveTraces] = useState<string[]>([])
+  const [traceId, setTraceId] = useState<string>("");
+  const [activeTraces, setActiveTraces] = useState<string[]>([]);
 
-  const jaegerUrl = import.meta.env.VITE_JAEGER_UI_URL || 'http://localhost:16686'
+  const jaegerUrl =
+    import.meta.env.VITE_JAEGER_UI_URL || "http://localhost:16686";
 
   const handleCreateTrace = () => {
-    const tracer = trace.getTracer('delineate-frontend')
-    tracer.startActiveSpan('user.action.create_test_trace', (span) => {
-      span.setAttribute('action', 'test_trace_creation')
-      span.setAttribute('source', 'trace_viewer')
+    const tracer = trace.getTracer("delineate-frontend");
+    tracer.startActiveSpan("user.action.create_test_trace", (span) => {
+      span.setAttribute("action", "test_trace_creation");
+      span.setAttribute("source", "trace_viewer");
 
-      const spanContext = span.spanContext()
+      const spanContext = span.spanContext();
       if (spanContext.isValid && spanContext.traceId) {
-        const newTraceId = spanContext.traceId
-        setTraceId(newTraceId)
+        const newTraceId = spanContext.traceId;
+        setTraceId(newTraceId);
         if (!activeTraces.includes(newTraceId)) {
-          setActiveTraces((prev) => [newTraceId, ...prev].slice(0, 10))
+          setActiveTraces((prev) => [newTraceId, ...prev].slice(0, 10));
         }
       }
 
       // Simulate some work
       setTimeout(() => {
-        span.end()
-      }, 100)
-    })
-  }
+        span.end();
+      }, 100);
+    });
+  };
 
   const handleViewTrace = () => {
     if (traceId.trim()) {
-      window.open(`${jaegerUrl}/trace/${traceId.trim()}`, '_blank')
+      window.open(`${jaegerUrl}/trace/${traceId.trim()}`, "_blank");
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -78,7 +79,8 @@ export default function TraceViewer() {
               <li>Or paste a trace ID from the Download Jobs panel</li>
               <li>Click "View in Jaeger" to open the trace in Jaeger UI</li>
               <li>
-                Trace IDs are also automatically linked in the Download Jobs list
+                Trace IDs are also automatically linked in the Download Jobs
+                list
               </li>
             </ol>
           </div>
@@ -98,8 +100,8 @@ export default function TraceViewer() {
                 <code className="text-sm font-mono text-gray-700">{tId}</code>
                 <button
                   onClick={() => {
-                    setTraceId(tId)
-                    window.open(`${jaegerUrl}/trace/${tId}`, '_blank')
+                    setTraceId(tId);
+                    window.open(`${jaegerUrl}/trace/${tId}`, "_blank");
                   }}
                   className="px-4 py-1 text-sm bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors"
                 >
@@ -116,7 +118,7 @@ export default function TraceViewer() {
         <h3 className="text-lg font-semibold mb-4">Trace Correlation Flow</h3>
         <div className="bg-gray-50 rounded-lg p-4">
           <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono">
-{`User Action (Frontend)
+            {`User Action (Frontend)
     │
     ▼
 OpenTelemetry SDK creates trace
@@ -141,7 +143,7 @@ View in Jaeger UI
         </div>
         <div className="mt-4">
           <p className="text-sm text-gray-600">
-            <strong>Jaeger UI:</strong>{' '}
+            <strong>Jaeger UI:</strong>{" "}
             <a
               href={jaegerUrl}
               target="_blank"
@@ -154,6 +156,5 @@ View in Jaeger UI
         </div>
       </div>
     </div>
-  )
+  );
 }
-

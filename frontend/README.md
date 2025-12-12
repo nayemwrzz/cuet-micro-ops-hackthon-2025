@@ -95,4 +95,3 @@ The dashboard integrates with the backend API:
 - Trace propagation via `traceparent` header
 - Correlation with backend traces
 - Direct links to Jaeger UI for trace viewing
-

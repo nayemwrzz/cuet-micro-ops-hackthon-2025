@@ -70,6 +70,7 @@ Errors in Sentry tagged with: trace_id=abc123
 ### Created Files
 
 **Frontend Application** (`frontend/` directory):
+
 - `frontend/package.json` - Dependencies and scripts
 - `frontend/tsconfig.json` - TypeScript configuration
 - `frontend/vite.config.ts` - Vite configuration
@@ -93,6 +94,7 @@ Errors in Sentry tagged with: trace_id=abc123
 - `frontend/src/components/TraceViewer.tsx` - Trace viewer component
 
 **Documentation**:
+
 - `docs/OBSERVABILITY_DESIGN.md` - Observability architecture design
 - `docs/CHALLENGE_4_IMPLEMENTATION.md` - Comprehensive setup guide
 - `CHALLENGE_4_SUMMARY.md` - This file
@@ -148,17 +150,17 @@ Errors in Sentry tagged with: trace_id=abc123
 
 ## 🔧 Technology Stack
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Frontend Framework | React 18 | UI framework |
-| Build Tool | Vite | Fast development and builds |
-| Language | TypeScript | Type safety |
-| Styling | Tailwind CSS | Utility-first CSS |
-| State Management | React Query | API state management |
-| Error Tracking | Sentry React SDK | Error capture and monitoring |
-| Tracing | OpenTelemetry JS | Distributed tracing |
-| Charts | Recharts | Metrics visualization |
-| HTTP Client | Axios | API requests |
+| Component          | Technology       | Purpose                      |
+| ------------------ | ---------------- | ---------------------------- |
+| Frontend Framework | React 18         | UI framework                 |
+| Build Tool         | Vite             | Fast development and builds  |
+| Language           | TypeScript       | Type safety                  |
+| Styling            | Tailwind CSS     | Utility-first CSS            |
+| State Management   | React Query      | API state management         |
+| Error Tracking     | Sentry React SDK | Error capture and monitoring |
+| Tracing            | OpenTelemetry JS | Distributed tracing          |
+| Charts             | Recharts         | Metrics visualization        |
+| HTTP Client        | Axios            | API requests                 |
 
 ---
 
@@ -202,6 +204,7 @@ open http://localhost:5173
 See `docs/CHALLENGE_4_IMPLEMENTATION.md` for detailed testing instructions.
 
 **Test Checklist**:
+
 - [x] Health status displays correctly
 - [x] Download jobs can be initiated
 - [x] Job status updates in real-time
@@ -315,4 +318,3 @@ This implementation demonstrates:
 Challenge 4 has been fully implemented with all required features and several bonus enhancements. The observability dashboard provides comprehensive visibility into the download microservice, with seamless integration of Sentry for error tracking and OpenTelemetry for distributed tracing.
 
 The implementation is production-ready, well-documented, and demonstrates best practices in observability, React development, and Docker containerization.
-

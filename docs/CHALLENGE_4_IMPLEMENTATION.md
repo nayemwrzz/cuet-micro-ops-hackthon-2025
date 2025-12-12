@@ -355,7 +355,7 @@ Sentry.init({
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1.0,
   // Add custom integrations
-})
+});
 ```
 
 ### Custom OpenTelemetry Configuration
@@ -365,7 +365,7 @@ Edit `frontend/src/lib/telemetry.ts`:
 ```typescript
 sdk = new WebSDK({
   resource: new Resource({
-    [ATTR_SERVICE_NAME]: 'delineate-observability-dashboard',
+    [ATTR_SERVICE_NAME]: "delineate-observability-dashboard",
     // Add custom resource attributes
   }),
   traceExporter: new OTLPTraceExporter({
@@ -373,7 +373,7 @@ sdk = new WebSDK({
     // Add custom exporter options
   }),
   // Add more instrumentations
-})
+});
 ```
 
 ### Production Build
@@ -432,8 +432,8 @@ npm run build
 ## Support
 
 For issues or questions:
+
 1. Check the troubleshooting section above
 2. Review browser console for errors
 3. Check Docker logs: `docker compose -f docker/compose.dev.yml logs frontend`
 4. Verify all environment variables are set correctly
-

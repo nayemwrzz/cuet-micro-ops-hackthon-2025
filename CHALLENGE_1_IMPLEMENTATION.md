@@ -52,6 +52,7 @@ This document explains how Challenge 1 (S3 Storage Integration) has been impleme
 ## 📁 Files Modified/Created
 
 ### Modified Files
+
 1. **`docker/compose.dev.yml`**
    - Added MinIO service
    - Added MinIO init container
@@ -65,6 +66,7 @@ This document explains how Challenge 1 (S3 Storage Integration) has been impleme
    - Added service dependencies
 
 ### No New Files Required
+
 - Bucket initialization is handled inline in Docker Compose using MinIO Client (mc)
 - No separate init scripts needed (handled by entrypoint in init container)
 
@@ -77,10 +79,12 @@ This document explains how Challenge 1 (S3 Storage Integration) has been impleme
 **Service Name**: `minio`  
 **Image**: `minio/minio:latest`  
 **Ports**:
+
 - `9000`: S3 API endpoint
 - `9001`: MinIO Console UI (for management)
 
 **Credentials** (default):
+
 - Access Key: `minioadmin`
 - Secret Key: `minioadmin`
 
@@ -100,6 +104,7 @@ S3_REGION=us-east-1
 ```
 
 **Key Points**:
+
 - `S3_ENDPOINT`: Uses Docker service name `minio` (not `localhost`)
 - `S3_FORCE_PATH_STYLE=true`: Required for self-hosted S3
 - Bucket name is `downloads` as required by the challenge
@@ -107,6 +112,7 @@ S3_REGION=us-east-1
 ### Bucket Initialization
 
 The `minio-init` container:
+
 1. Waits for MinIO to be healthy
 2. Connects using MinIO Client (mc)
 3. Creates `downloads` bucket
@@ -135,12 +141,14 @@ npm run docker:prod
 ```
 
 **What happens**:
+
 1. MinIO service starts
 2. MinIO init container creates bucket
 3. API service connects to MinIO
 4. All services become ready
 
 **Expected output**:
+
 ```
 Creating network "delineate_default" ...
 Creating volume "delineate_minio-data" ...
@@ -153,6 +161,7 @@ Creating delineate-app ... done
 ### Step 2: Verify MinIO is Running
 
 **Check MinIO Console UI**:
+
 - Open: http://localhost:9001
 - Login:
   - Username: `minioadmin`
@@ -160,6 +169,7 @@ Creating delineate-app ... done
 - You should see the `downloads` bucket created
 
 **Or check via API**:
+
 ```bash
 # Check if MinIO API is responding
 curl http://localhost:9000/minio/health/live
@@ -174,6 +184,7 @@ curl http://localhost:3000/health
 ```
 
 **Expected Response**:
+
 ```json
 {
   "status": "healthy",
@@ -195,6 +206,7 @@ curl -X POST http://localhost:3000/v1/download/check \
 ```
 
 **Expected Response**:
+
 ```json
 {
   "file_id": 70000,
@@ -214,6 +226,7 @@ npm run test:e2e
 ```
 
 **Expected Output**:
+
 ```
 ✓ PASS: Root returns welcome message
 ✓ PASS: Health returns valid status code (200 or 503)
@@ -223,6 +236,7 @@ npm run test:e2e
 ```
 
 **Critical Test**: Health endpoint test should show:
+
 - Status code: `200` (not 503)
 - Storage status: `"ok"` (not "error")
 
@@ -259,11 +273,13 @@ Challenge 1 is successful when:
 ### Test 1: Manual Health Check
 
 **Command**:
+
 ```bash
 curl http://localhost:3000/health
 ```
 
 **Expected Result**:
+
 - **HTTP Status**: `200`
 - **Response Body**:
   ```json
@@ -276,6 +292,7 @@ curl http://localhost:3000/health
   ```
 
 **If you see** `"storage": "error"` or status `503`:
+
 - MinIO might not be running
 - API might not be connecting to MinIO
 - Check Docker logs: `docker logs minio` and `docker logs delineate-app`
@@ -285,11 +302,13 @@ curl http://localhost:3000/health
 ### Test 2: E2E Test Suite
 
 **Command**:
+
 ```bash
 npm run test:e2e
 ```
 
 **Expected Output**:
+
 ```
 === Health Endpoint ===
 ✓ PASS: Health returns valid status code (200 or 503)
@@ -297,7 +316,7 @@ npm run test:e2e
 ✓ PASS: Storage check returns valid status
 
 ==============================
-        TEST SUMMARY          
+        TEST SUMMARY
 ==============================
 Total:  29
 Passed: 29
@@ -307,6 +326,7 @@ All tests passed!
 ```
 
 **Key Points**:
+
 - Health endpoint test should pass
 - Storage check should return `"ok"` (not `"error"`)
 
@@ -315,6 +335,7 @@ All tests passed!
 ### Test 3: MinIO Console Verification
 
 **Steps**:
+
 1. Open browser: http://localhost:9001
 2. Login:
    - Username: `minioadmin`
@@ -329,11 +350,13 @@ All tests passed!
 ### Test 4: Container Status Check
 
 **Command**:
+
 ```bash
 docker ps
 ```
 
 **Expected Output**:
+
 ```
 CONTAINER ID   IMAGE                        STATUS
 xxx            minio/minio:latest          Up X minutes (healthy)
@@ -343,6 +366,7 @@ xxx            jaegertracing/all-in-one    Up X minutes
 ```
 
 **Key Points**:
+
 - `minio` should show `(healthy)`
 - `minio-init` can show `Exited (0)` - that's normal (one-time init)
 - `delineate-app` should be running
@@ -352,11 +376,13 @@ xxx            jaegertracing/all-in-one    Up X minutes
 ### Test 5: API Logs Check
 
 **Command**:
+
 ```bash
 docker logs delineate-app | grep -i "storage\|s3\|minio"
 ```
 
 **Expected**:
+
 - No error messages about S3 connection
 - No "storage error" messages
 - Health checks logging successfully
@@ -368,11 +394,13 @@ docker logs delineate-app | grep -i "storage\|s3\|minio"
 ### Issue: Health endpoint returns `"storage": "error"`
 
 **Possible Causes**:
+
 1. MinIO not running
 2. API can't connect to MinIO
 3. Bucket doesn't exist
 
 **Solutions**:
+
 ```bash
 # Check if MinIO is running
 docker ps | grep minio
@@ -393,10 +421,12 @@ docker compose -f docker/compose.dev.yml up --build
 ### Issue: `minio-init` container fails
 
 **Possible Causes**:
+
 1. MinIO not ready when init runs
 2. Bucket already exists (this is fine, init handles it)
 
 **Solutions**:
+
 - Check init logs: `docker logs <minio-init-container-id>`
 - The init script handles "already exists" gracefully
 - If init fails, MinIO still works, just create bucket manually via console
@@ -408,6 +438,7 @@ docker compose -f docker/compose.dev.yml up --build
 **Error**: `Bind for 0.0.0.0:9000 failed: port is already allocated`
 
 **Solutions**:
+
 ```bash
 # Check what's using the port
 netstat -ano | findstr :9000  # Windows
@@ -422,10 +453,12 @@ lsof -i :9000                  # Mac/Linux
 ### Issue: API can't connect to MinIO
 
 **Symptoms**:
+
 - Health returns `"storage": "error"`
 - API logs show connection errors
 
 **Solutions**:
+
 ```bash
 # Verify MinIO is accessible from API container
 docker exec -it delineate-app sh
@@ -446,13 +479,13 @@ docker network inspect delineate_default
 
 ### Test Summary Table
 
-| Test | Command | Expected Status | Expected Response |
-|------|---------|----------------|-------------------|
-| Health Check | `curl http://localhost:3000/health` | 200 OK | `{"status":"healthy","checks":{"storage":"ok"}}` |
-| Download Check | `curl -X POST .../v1/download/check -d '{"file_id":70000}'` | 200 OK | `{"file_id":70000,"available":false,...}` |
-| E2E Tests | `npm run test:e2e` | Exit 0 | 29/29 tests passed |
-| MinIO Console | http://localhost:9001 | Accessible | Login successful, bucket visible |
-| Container Health | `docker ps` | All running | MinIO shows (healthy) |
+| Test             | Command                                                     | Expected Status | Expected Response                                |
+| ---------------- | ----------------------------------------------------------- | --------------- | ------------------------------------------------ |
+| Health Check     | `curl http://localhost:3000/health`                         | 200 OK          | `{"status":"healthy","checks":{"storage":"ok"}}` |
+| Download Check   | `curl -X POST .../v1/download/check -d '{"file_id":70000}'` | 200 OK          | `{"file_id":70000,"available":false,...}`        |
+| E2E Tests        | `npm run test:e2e`                                          | Exit 0          | 29/29 tests passed                               |
+| MinIO Console    | http://localhost:9001                                       | Accessible      | Login successful, bucket visible                 |
+| Container Health | `docker ps`                                                 | All running     | MinIO shows (healthy)                            |
 
 ---
 
@@ -486,11 +519,13 @@ npm run test:e2e
 ## 🔐 Security Notes
 
 **Default Credentials**:
+
 - MinIO uses default credentials: `minioadmin`/`minioadmin`
 - **For production**: Change these credentials!
 - Set via environment variables in Docker Compose
 
 **Production Recommendations**:
+
 1. Use strong passwords for MinIO
 2. Don't expose MinIO ports publicly
 3. Use secrets management for credentials
@@ -503,12 +538,14 @@ npm run test:e2e
 ### MinIO vs Brilliant S3
 
 The implementation uses **MinIO** as the self-hosted S3 service because:
+
 - ✅ Well-documented and widely used
 - ✅ Easy to set up in Docker
 - ✅ Fully S3-compatible
 - ✅ Has console UI for management
 
 If you need to connect to **Brilliant S3** (external hosted service):
+
 1. Update `S3_ENDPOINT` to your Brilliant S3 endpoint URL
 2. Update credentials to your Brilliant S3 credentials
 3. Remove MinIO service from Docker Compose
@@ -517,6 +554,7 @@ If you need to connect to **Brilliant S3** (external hosted service):
 ### Bucket Policy
 
 The init script sets bucket policy to `download` (public read). This allows:
+
 - Files to be downloaded publicly
 - API to check file availability
 - Can be customized via MinIO console
@@ -540,4 +578,3 @@ When all tests pass and health endpoint returns `"storage": "ok"`, Challenge 1 i
 **Files Modified**: `docker/compose.dev.yml`, `docker/compose.prod.yml`  
 **Files Created**: None (init handled inline)  
 **Test Status**: Ready for testing
-

@@ -85,16 +85,19 @@ git push origin master
 ### Method 1: Watch Workflow in Actions Tab (Recommended)
 
 #### Step 1: Go to Actions Tab
+
 1. Open your repository in GitHub (e.g., `https://github.com/your-username/cuet-micro-ops-hackthon-2025`)
 2. Click on the **"Actions"** tab (top navigation bar)
 3. You should see your workflow running or completed
 
 #### Step 2: Select the Workflow Run
+
 - You'll see a list of workflow runs
 - Click on the most recent one (should show "CI" workflow)
 - It will show the status: 🟡 (yellow = running) or ✅ (green = passed) or ❌ (red = failed)
 
 #### Step 3: Observe Each Job
+
 You'll see jobs in this order:
 
 1. **🔍 Lint & Format** (Job 1)
@@ -126,6 +129,7 @@ You'll see jobs in this order:
    - **Expected**: ✅ Green checkmark
 
 #### Step 4: View Job Summaries
+
 1. Click on any job
 2. Scroll to the bottom
 3. Look for **"Job Summary"** section
@@ -135,6 +139,7 @@ You'll see jobs in this order:
    - Deployment options
 
 #### Step 5: View Detailed Logs
+
 1. Click on any job
 2. Click on any step (e.g., "Run ESLint")
 3. See detailed output in the logs
@@ -231,14 +236,18 @@ If you created a PR:
 ### Understanding the Logs
 
 #### Lint Job Logs
+
 Look for:
+
 ```
 ✓ No linting errors
 ✓ Code formatting check passed
 ```
 
 #### Test Job Logs
+
 Look for:
+
 ```
 ✓ PASS: Root returns welcome message
 ✓ PASS: Health returns valid status code
@@ -250,7 +259,9 @@ All tests passed!
 ```
 
 #### Build Job Logs
+
 Look for:
+
 ```
 [INFO] Building Docker image...
 [INFO] Cache hit for layer...
@@ -320,6 +331,7 @@ The security workflow (`.github/workflows/security.yml`) will also run:
 ### Workflow Doesn't Trigger
 
 **Check:**
+
 1. Did you push to `main`/`master` branch? (or create PR targeting it)
 2. Is `.github/workflows/ci.yml` in the repository?
 3. Check Actions tab → Workflows → CI → is it enabled?
@@ -327,6 +339,7 @@ The security workflow (`.github/workflows/security.yml`) will also run:
 ### Job Fails
 
 **Check:**
+
 1. Click on failed job
 2. Click on failed step
 3. Read error message in logs
@@ -339,6 +352,7 @@ The security workflow (`.github/workflows/security.yml`) will also run:
 ### Can't See Workflow
 
 **Check:**
+
 1. Are you on the correct branch?
 2. Did the push complete successfully?
 3. Refresh the Actions tab
@@ -349,6 +363,7 @@ The security workflow (`.github/workflows/security.yml`) will also run:
 ## ✅ Success!
 
 When you see:
+
 - ✅ All jobs green
 - ✅ 29 tests passed
 - ✅ Docker image built
@@ -378,4 +393,3 @@ After verifying CI/CD works:
 ---
 
 **Ready to push? Follow Step 1-4 above, then watch the magic happen in GitHub Actions! 🚀**
-

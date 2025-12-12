@@ -22,6 +22,7 @@ That's it! 🎉
 ## Need More Details?
 
 See `SETUP.md` for:
+
 - Complete installation guide
 - Troubleshooting
 - Docker setup
@@ -41,4 +42,3 @@ npm run docker:dev   # Start with Docker (includes MinIO)
 ---
 
 **Questions?** Check `README.md` or `SETUP.md` for full documentation.
-

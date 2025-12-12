@@ -9,6 +9,7 @@ This guide explains which GitHub Secrets you need to set up for the CI/CD pipeli
 **You don't need any secrets to run the CI pipeline!** All secrets are **optional**. The pipeline will work without any secrets configured.
 
 However, if you want to:
+
 - ✅ Test with real S3 storage (Challenge 1)
 - ✅ Get Slack/Discord notifications
 - ✅ Deploy to a container registry
@@ -20,17 +21,17 @@ Then you'll need to configure the relevant secrets.
 
 ## 📋 Secrets Overview
 
-| Secret Name | Required? | Purpose | Default Behavior |
-|------------|-----------|---------|------------------|
-| **S3_ENDPOINT** | ❌ Optional | S3/MinIO endpoint for tests | Tests run without S3 |
-| **S3_ACCESS_KEY_ID** | ❌ Optional | S3 access key | Tests run without S3 |
-| **S3_SECRET_ACCESS_KEY** | ❌ Optional | S3 secret key | Tests run without S3 |
-| **S3_BUCKET_NAME** | ❌ Optional | S3 bucket name | Tests run without S3 |
-| **SLACK_WEBHOOK_URL** | ❌ Optional | Slack notifications | No notifications |
-| **DISCORD_WEBHOOK_URL** | ❌ Optional | Discord notifications | No notifications |
-| **DOCKER_USERNAME** | ❌ Optional | Docker Hub login | Deployment disabled |
-| **DOCKER_PASSWORD** | ❌ Optional | Docker Hub password | Deployment disabled |
-| **SENTRY_DSN** | ❌ Optional | Sentry error tracking | Error tracking disabled |
+| Secret Name              | Required?   | Purpose                     | Default Behavior        |
+| ------------------------ | ----------- | --------------------------- | ----------------------- |
+| **S3_ENDPOINT**          | ❌ Optional | S3/MinIO endpoint for tests | Tests run without S3    |
+| **S3_ACCESS_KEY_ID**     | ❌ Optional | S3 access key               | Tests run without S3    |
+| **S3_SECRET_ACCESS_KEY** | ❌ Optional | S3 secret key               | Tests run without S3    |
+| **S3_BUCKET_NAME**       | ❌ Optional | S3 bucket name              | Tests run without S3    |
+| **SLACK_WEBHOOK_URL**    | ❌ Optional | Slack notifications         | No notifications        |
+| **DISCORD_WEBHOOK_URL**  | ❌ Optional | Discord notifications       | No notifications        |
+| **DOCKER_USERNAME**      | ❌ Optional | Docker Hub login            | Deployment disabled     |
+| **DOCKER_PASSWORD**      | ❌ Optional | Docker Hub password         | Deployment disabled     |
+| **SENTRY_DSN**           | ❌ Optional | Sentry error tracking       | Error tracking disabled |
 
 **Note**: `GITHUB_TOKEN` is automatically provided by GitHub Actions - you don't need to set it.
 
@@ -39,6 +40,7 @@ Then you'll need to configure the relevant secrets.
 ## 🎯 Required Secrets: **NONE**
 
 The CI pipeline works without any secrets! The workflow is designed to:
+
 - ✅ Run linting (no secrets needed)
 - ✅ Run tests (works with or without S3)
 - ✅ Build Docker images (no secrets needed)
@@ -54,17 +56,18 @@ The CI pipeline works without any secrets! The workflow is designed to:
 If you want CI tests to use a real S3/MinIO endpoint:
 
 #### Steps:
+
 1. Go to your GitHub repository
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Click **New repository secret**
 4. Add these secrets:
 
-| Secret Name | Example Value | Description |
-|------------|---------------|-------------|
-| `S3_ENDPOINT` | `http://s3.example.com:9000` | Your MinIO/S3 endpoint URL |
-| `S3_ACCESS_KEY_ID` | `minioadmin` | Your S3 access key |
-| `S3_SECRET_ACCESS_KEY` | `minioadmin123` | Your S3 secret key |
-| `S3_BUCKET_NAME` | `downloads` | Your S3 bucket name |
+| Secret Name            | Example Value                | Description                |
+| ---------------------- | ---------------------------- | -------------------------- |
+| `S3_ENDPOINT`          | `http://s3.example.com:9000` | Your MinIO/S3 endpoint URL |
+| `S3_ACCESS_KEY_ID`     | `minioadmin`                 | Your S3 access key         |
+| `S3_SECRET_ACCESS_KEY` | `minioadmin123`              | Your S3 secret key         |
+| `S3_BUCKET_NAME`       | `downloads`                  | Your S3 bucket name        |
 
 **Note**: For local testing with MinIO (via Docker Compose), these aren't needed in GitHub since the tests can run without S3.
 
@@ -192,10 +195,12 @@ Only needed if you want to push Docker images to a registry.
 **Minimum Setup**: No secrets needed! Just push your code.
 
 **Recommended Setup** (for bonus points):
+
 - ✅ Add `SLACK_WEBHOOK_URL` or `DISCORD_WEBHOOK_URL` for notifications
 - ✅ Add `SENTRY_DSN` if you've set up Sentry
 
 **Optional Setup**:
+
 - S3 secrets (only if testing with remote S3)
 - Docker registry secrets (only if deploying)
 
@@ -212,17 +217,21 @@ Only needed if you want to push Docker images to a registry.
 ## ❓ Troubleshooting
 
 ### "Secret not found" warning
+
 - **Not a problem!** Secrets are optional. The workflow uses empty strings as defaults.
 
 ### Tests failing without S3
+
 - **Expected behavior!** Tests are designed to work with or without S3. Check test logic.
 
 ### Notifications not working
+
 - Verify webhook URL is correct
 - Check Slack/Discord webhook is active
 - Verify secret name matches exactly (case-sensitive)
 
 ### Deployment not working
+
 - Ensure secrets are set correctly
 - Check workflow file has `if: true` (not `if: false`)
 - Verify registry credentials are valid
@@ -230,4 +239,3 @@ Only needed if you want to push Docker images to a registry.
 ---
 
 **Summary**: You can run the entire CI pipeline without any secrets! They're all optional enhancements.
-

@@ -26,6 +26,7 @@ This document presents a **Hybrid Architecture** solution for handling variable-
 ### Current Issues
 
 The microservice handles file downloads with variable processing times:
+
 - **Fast downloads**: Complete within ~10 seconds
 - **Slow downloads**: Can take up to 120+ seconds
 
@@ -86,24 +87,24 @@ graph TB
     WEB -->|HTTP/SSE| CF
     MOBILE -->|HTTP/Webhook| CF
     API_CLIENT -->|HTTP/Webhook| CF
-    
+
     CF -->|HTTP| API
-    
+
     API -->|Create Job| QUEUE
     API -->|Check Status| REDIS
     API -->|SSE Stream| WEB
-    
+
     QUEUE --> REDIS
     REDIS --> QUEUE
-    
+
     QUEUE -->|Process Job| WORKER1
     QUEUE -->|Process Job| WORKER2
     QUEUE -->|Process Job| WORKERN
-    
+
     WORKER1 -->|Upload/Check| S3
     WORKER2 -->|Upload/Check| S3
     WORKERN -->|Upload/Check| S3
-    
+
     WORKER1 -->|Update Status| REDIS
     WORKER2 -->|Update Status| REDIS
     WORKERN -->|Update Status| REDIS
@@ -123,20 +124,20 @@ sequenceDiagram
     API->>Q: Enqueue job
     Q-->>API: jobId: "abc123"
     API-->>C: {jobId, status: "queued"}<br/>HTTP 202 Accepted
-    
+
     Note over C,API: Client gets immediate response
-    
+
     Q->>W: Process job
     W->>S3: Check file availability
     S3-->>W: File available
     W->>Q: Update status: "processing" → "completed"
     W->>Q: Store presigned URL (TTL: 1h)
-    
+
     C->>API: GET /v1/download/status/abc123
     API->>Q: Get job status
     Q-->>API: {status: "completed", presignedUrl: "..."}
     API-->>C: {status: "completed", downloadUrl: "..."}
-    
+
     C->>S3: Download file (direct)
 ```
 
@@ -154,7 +155,7 @@ sequenceDiagram
     API->>Q: Enqueue job
     Q-->>API: jobId: "xyz789"
     API-->>C: {jobId, status: "queued", estimatedTime: 90}
-    
+
     Note over C: Option A: Polling
     loop Every 5 seconds
         C->>API: GET /v1/download/status/xyz789
@@ -162,24 +163,24 @@ sequenceDiagram
         Q-->>API: {status: "processing", progress: 45}
         API-->>C: {status: "processing", progress: 45}
     end
-    
+
     Note over C: Option B: SSE (Premium)
     C->>API: GET /v1/download/xyz789/stream
     API-->>C: SSE connection established
-    
+
     Q->>W: Process job (60-120s)
     loop Progress Updates
         W->>Q: Update progress: 10% → 20% → ... → 100%
         Q->>API: Publish progress (Pub/Sub)
         API-->>C: data: {"progress": 50, "status": "processing"}
     end
-    
+
     W->>S3: Check/Generate file
     S3-->>W: File ready
     W->>Q: Update status: "completed"
     Q->>API: Publish completion (Pub/Sub)
     API-->>C: data: {"status": "completed", "downloadUrl": "..."}
-    
+
     C->>S3: Download file (direct)
 ```
 
@@ -190,6 +191,7 @@ sequenceDiagram
 ### 3.1 Pattern Evaluation
 
 Before choosing our approach, we evaluated multiple patterns in the context of:
+
 - **Infrastructure Constraints**: Single VM (2 vCPU, 8GB RAM)
 - **Proxy Limitations**: Cloudflare (100s timeout), nginx configurable
 - **S3 Integration**: MinIO from Challenge 1 with presigned URLs
@@ -199,6 +201,7 @@ Before choosing our approach, we evaluated multiple patterns in the context of:
 #### Option A: Polling Pattern
 
 **How it works:**
+
 ```
 Client → POST /download/initiate → jobId
 Client → GET /download/status/:jobId (every 5s)
@@ -206,6 +209,7 @@ Client → GET /download/:jobId (when ready)
 ```
 
 **Pros:**
+
 - ✅ Simple to implement (no persistent connections)
 - ✅ Works with all HTTP clients (browsers, mobile, APIs)
 - ✅ No special proxy configuration needed
@@ -214,17 +218,20 @@ Client → GET /download/:jobId (when ready)
 - ✅ Low infrastructure overhead (no WebSocket/SSE servers)
 
 **Cons:**
+
 - ❌ Less efficient (constant polling wastes bandwidth)
 - ❌ Not truly real-time (delay equals poll interval)
 - ❌ Higher server load (many status check requests)
 - ❌ Battery drain on mobile devices
 
 **Infrastructure Impact:**
+
 - Minimal: Simple HTTP endpoints
 - Redis for job status storage
 - No persistent connections to manage
 
 **Cost Implications:**
+
 - Redis: ~100MB RAM, minimal CPU
 - API server: Moderate CPU from polling requests
 - **Total**: ~150MB RAM, 0.2 vCPU overhead
@@ -236,6 +243,7 @@ Client → GET /download/:jobId (when ready)
 #### Option B: WebSocket/SSE Pattern
 
 **How it works:**
+
 ```
 Client → POST /download/initiate → jobId
 Client → WS/SSE /download/subscribe/:jobId
@@ -244,12 +252,14 @@ Server → Completion notification
 ```
 
 **Pros:**
+
 - ✅ Real-time updates (instant feedback)
 - ✅ Efficient (single connection, minimal overhead)
 - ✅ Better UX (smooth progress bars)
 - ✅ Low bandwidth usage (only sends updates when needed)
 
 **Cons:**
+
 - ❌ Requires persistent connections (memory overhead)
 - ❌ Complex proxy configuration (timeouts, buffering)
 - ❌ Not all clients support WebSocket/SSE (mobile apps need polyfills)
@@ -257,11 +267,13 @@ Server → Completion notification
 - ❌ Higher memory usage (each connection ~10-20KB)
 
 **Infrastructure Impact:**
+
 - Higher: Persistent connections consume memory
 - SSE easier than WebSocket (standard HTTP)
 - Requires proxy timeout configuration
 
 **Cost Implications:**
+
 - Redis: ~100MB RAM (same as polling)
 - API server: ~500MB RAM for 1000 concurrent SSE connections
 - **Total**: ~600MB RAM, 0.3 vCPU overhead
@@ -273,6 +285,7 @@ Server → Completion notification
 #### Option C: Webhook/Callback Pattern
 
 **How it works:**
+
 ```
 Client → POST /download/initiate { callbackUrl }
 Server → Process asynchronously
@@ -280,22 +293,26 @@ Server → POST callbackUrl with result
 ```
 
 **Pros:**
+
 - ✅ Server-initiated (no polling needed)
 - ✅ Efficient (one request, one callback)
 - ✅ Perfect for backend-to-backend integrations
 - ✅ No client-side connection management
 
 **Cons:**
+
 - ❌ Requires public endpoint (problematic for browsers)
 - ❌ Not suitable for web frontend (can't receive webhooks)
 - ❌ Complex error handling (webhook delivery failures)
 - ❌ Security concerns (webhook URL validation)
 
 **Infrastructure Impact:**
+
 - Minimal: Standard HTTP endpoints
 - Requires webhook delivery mechanism
 
 **Cost Implications:**
+
 - Redis: ~100MB RAM
 - Webhook delivery queue: Additional ~50MB RAM
 - **Total**: ~150MB RAM, 0.2 vCPU overhead
@@ -307,6 +324,7 @@ Server → POST callbackUrl with result
 #### Option D: Hybrid Approach (Our Choice)
 
 **How it works:**
+
 ```
 Web Client: Polling (default) + SSE (optional premium)
 Mobile App: Polling (battery efficient)
@@ -314,6 +332,7 @@ API Client: Webhook (backend integration)
 ```
 
 **Pros:**
+
 - ✅ **Flexibility**: Right tool for each use case
 - ✅ **Compatibility**: Works everywhere (polling as universal fallback)
 - ✅ **User Experience**: Real-time for web (SSE), efficient for mobile (polling)
@@ -322,15 +341,18 @@ API Client: Webhook (backend integration)
 - ✅ **Production-Ready**: Pattern used by GitHub, AWS, Stripe
 
 **Cons:**
+
 - ❌ More complex to implement (three patterns)
 - ❌ Higher code complexity (multiple code paths)
 - ❌ More testing required
 
 **Infrastructure Impact:**
+
 - Moderate: Supports all patterns but uses them selectively
 - Can start with polling only, add SSE/webhooks incrementally
 
 **Cost Implications:**
+
 - Redis: ~100MB RAM
 - API server: ~200MB RAM (polling baseline, SSE only when needed)
 - **Total**: ~300MB RAM, 0.3 vCPU overhead (scales with usage)
@@ -341,15 +363,15 @@ API Client: Webhook (backend integration)
 
 ### 3.2 Decision Matrix
 
-| Criteria | Polling | SSE/WebSocket | Webhook | **Hybrid** |
-|----------|---------|---------------|---------|------------|
-| **Simplicity** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| **UX (Web)** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ | ⭐⭐⭐⭐ |
-| **UX (Mobile)** | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Infrastructure** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Compatibility** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **Cost (RAM)** | ~150MB | ~600MB | ~150MB | **~300MB** |
-| **Proxy Config** | ✅ Easy | ⚠️ Complex | ✅ Easy | ⚠️ Moderate |
+| Criteria           | Polling    | SSE/WebSocket | Webhook  | **Hybrid**  |
+| ------------------ | ---------- | ------------- | -------- | ----------- |
+| **Simplicity**     | ⭐⭐⭐⭐⭐ | ⭐⭐⭐        | ⭐⭐⭐⭐ | ⭐⭐⭐      |
+| **UX (Web)**       | ⭐⭐       | ⭐⭐⭐⭐⭐    | ❌       | ⭐⭐⭐⭐    |
+| **UX (Mobile)**    | ⭐⭐⭐⭐   | ⭐⭐⭐        | ⭐⭐⭐   | ⭐⭐⭐⭐    |
+| **Infrastructure** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐        | ⭐⭐⭐⭐ | ⭐⭐⭐⭐    |
+| **Compatibility**  | ⭐⭐⭐⭐⭐ | ⭐⭐⭐        | ⭐⭐⭐   | ⭐⭐⭐⭐⭐  |
+| **Cost (RAM)**     | ~150MB     | ~600MB        | ~150MB   | **~300MB**  |
+| **Proxy Config**   | ✅ Easy    | ⚠️ Complex    | ✅ Easy  | ⚠️ Moderate |
 
 **Winner**: **Hybrid Approach** - Best balance of UX, compatibility, and infrastructure efficiency.
 
@@ -359,7 +381,7 @@ API Client: Webhook (backend integration)
 
 Given the constraint of a **single VM (2 vCPU, 8GB RAM)**, our hybrid approach:
 
-1. **Memory Efficient**: 
+1. **Memory Efficient**:
    - Redis: ~100MB
    - API server: ~200-300MB (polling baseline)
    - Workers: ~200MB
@@ -386,11 +408,13 @@ Given the constraint of a **single VM (2 vCPU, 8GB RAM)**, our hybrid approach:
 ### 3.4 Chosen Approach: Hybrid Pattern (Option D)
 
 We chose a **Hybrid Approach** combining:
+
 - **Polling Pattern** (default, simple, universal support) - **Primary for mobile and simple web apps**
 - **Server-Sent Events (SSE)** (real-time updates for premium users) - **Optional for web apps**
 - **Webhook Pattern** (backend-to-backend integrations) - **For API clients**
 
 **Implementation Strategy:**
+
 - **Phase 1**: Implement polling (works immediately, universal support)
 - **Phase 2**: Add SSE support (enhanced UX for web users)
 - **Phase 3**: Add webhook support (backend integrations)
@@ -402,6 +426,7 @@ This phased approach allows us to deliver a working solution quickly while leavi
 #### Job Queue: Redis + BullMQ
 
 **Why Redis + BullMQ?**
+
 - ✅ **Self-hosted**: Free on single VM (vs AWS SQS: $0.40/million requests)
 - ✅ **Lightweight**: ~100MB RAM, minimal CPU
 - ✅ **Fast**: In-memory operations (microsecond latency)
@@ -410,6 +435,7 @@ This phased approach allows us to deliver a working solution quickly while leavi
 - ✅ **Hackathon-friendly**: No cloud account needed, works locally
 
 **Alternatives Considered:**
+
 - **AWS SQS**: ❌ Requires AWS account, costs money, external dependency
 - **RabbitMQ**: ⚠️ Heavier (~300MB RAM), overkill for this use case
 - **Database polling**: ❌ Higher latency, database load
@@ -422,12 +448,14 @@ This phased approach allows us to deliver a working solution quickly while leavi
 #### Cache/Storage: Redis (same instance)
 
 **Why same Redis instance?**
+
 - ✅ **Efficiency**: Reuse existing Redis connection
 - ✅ **Cost**: No additional infrastructure
 - ✅ **Performance**: Local access, sub-millisecond latency
 - ✅ **Pub/Sub**: Built-in support for SSE real-time updates
 
 **Data Structures:**
+
 - **Hash**: Job status storage (`job:status:{jobId}`)
 - **Set**: User job lists (`user:jobs:{userId}`)
 - **Sorted Set**: Rate limiting (`rate:limit:user:{userId}`)
@@ -440,6 +468,7 @@ This phased approach allows us to deliver a working solution quickly while leavi
 #### Object Storage: MinIO/S3 (Challenge 1 Integration)
 
 **Why Presigned URLs?**
+
 - ✅ **Direct Downloads**: Bypass API server, reduce bandwidth costs
 - ✅ **Scalability**: S3 handles download traffic, not API server
 - ✅ **Performance**: CDN-like performance for file downloads
@@ -447,6 +476,7 @@ This phased approach allows us to deliver a working solution quickly while leavi
 - ✅ **Cost**: API server only generates URL, doesn't stream files
 
 **Integration with Challenge 1:**
+
 - Uses existing MinIO setup from Challenge 1
 - Bucket: `downloads` (already created)
 - Access via `S3_ENDPOINT=http://minio:9000`
@@ -471,13 +501,13 @@ No changes needed to framework choice.
 
 #### Infrastructure Cost Breakdown (Single VM: 2 vCPU, 8GB RAM)
 
-| Component | RAM Usage | CPU Usage | Cost (Self-Hosted) | Cost (Managed) |
-|-----------|-----------|-----------|-------------------|----------------|
-| API Server | ~200MB | 0.2 vCPU | Free | $5-10/month |
-| Redis | ~100MB | 0.1 vCPU | Free | $10-20/month |
-| Workers | ~200MB | 0.3 vCPU | Free | Included in API |
-| MinIO | ~200MB | 0.2 vCPU | Free | $5-15/month |
-| **Total** | **~700MB** | **~0.8 vCPU** | **Free** | **$20-45/month** |
+| Component  | RAM Usage  | CPU Usage     | Cost (Self-Hosted) | Cost (Managed)   |
+| ---------- | ---------- | ------------- | ------------------ | ---------------- |
+| API Server | ~200MB     | 0.2 vCPU      | Free               | $5-10/month      |
+| Redis      | ~100MB     | 0.1 vCPU      | Free               | $10-20/month     |
+| Workers    | ~200MB     | 0.3 vCPU      | Free               | Included in API  |
+| MinIO      | ~200MB     | 0.2 vCPU      | Free               | $5-15/month      |
+| **Total**  | **~700MB** | **~0.8 vCPU** | **Free**           | **$20-45/month** |
 
 **Self-Hosted Total**: $0 (uses existing VM)  
 **Managed Cloud Total**: ~$20-45/month (if using managed services)
@@ -503,11 +533,11 @@ No changes needed to framework choice.
 
 Before designing new endpoints, we analyzed the current API implementation in `src/index.ts`:
 
-| Endpoint | Current Behavior | HTTP Status | Issues | Proposed Action |
-|----------|------------------|-------------|--------|-----------------|
-| `POST /v1/download/initiate` | Returns `jobId` immediately (no processing) | 200 | Returns jobId but doesn't actually process | **Enhance** - Keep structure, add background processing |
-| `POST /v1/download/check` | Synchronously checks S3 file availability | 200 | Works fine for quick checks | **Keep as-is** - No changes needed |
-| `POST /v1/download/start` | Processes download with 10-120s delay synchronously | 200 (but times out) | **⚠️ Main problem** - Blocks for 10-120s, times out at 30s | **Deprecate** - Replace with async job pattern or mark as legacy |
+| Endpoint                     | Current Behavior                                    | HTTP Status         | Issues                                                     | Proposed Action                                                  |
+| ---------------------------- | --------------------------------------------------- | ------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| `POST /v1/download/initiate` | Returns `jobId` immediately (no processing)         | 200                 | Returns jobId but doesn't actually process                 | **Enhance** - Keep structure, add background processing          |
+| `POST /v1/download/check`    | Synchronously checks S3 file availability           | 200                 | Works fine for quick checks                                | **Keep as-is** - No changes needed                               |
+| `POST /v1/download/start`    | Processes download with 10-120s delay synchronously | 200 (but times out) | **⚠️ Main problem** - Blocks for 10-120s, times out at 30s | **Deprecate** - Replace with async job pattern or mark as legacy |
 
 **Current Implementation Analysis:**
 
@@ -515,16 +545,20 @@ Before designing new endpoints, we analyzed the current API implementation in `s
 // Current: src/index.ts
 app.openapi(downloadInitiateRoute, (c) => {
   const { file_ids } = c.req.valid("json");
-  const jobId = crypto.randomUUID();  // ✅ Already returns jobId
-  return c.json({
-    jobId,
-    status: "queued",
-    totalFileIds: file_ids.length,
-  }, 200);
+  const jobId = crypto.randomUUID(); // ✅ Already returns jobId
+  return c.json(
+    {
+      jobId,
+      status: "queued",
+      totalFileIds: file_ids.length,
+    },
+    200,
+  );
 });
 ```
 
 **Key Insight**: The existing `/v1/download/initiate` endpoint already returns a `jobId`, which is perfect for our async architecture. We need to:
+
 1. Keep the endpoint structure (backward compatible)
 2. Add background job creation when this endpoint is called
 3. Return immediately (as it does now)
@@ -533,6 +567,7 @@ app.openapi(downloadInitiateRoute, (c) => {
 #### Existing Endpoints (To Be Enhanced)
 
 **POST /v1/download/initiate** (Currently exists - Enhance with background processing)
+
 ```typescript
 // Request
 {
@@ -553,6 +588,7 @@ app.openapi(downloadInitiateRoute, (c) => {
 #### New Endpoints
 
 **GET /v1/download/status/:jobId**
+
 ```typescript
 // Response
 {
@@ -569,6 +605,7 @@ app.openapi(downloadInitiateRoute, (c) => {
 ```
 
 **GET /v1/download/:jobId/stream** (SSE)
+
 ```
 Content-Type: text/event-stream
 
@@ -580,23 +617,25 @@ data: {"progress": 100, "status": "completed", "downloadUrl": "https://..."}
 ```
 
 **GET /v1/download/:jobId** (Download result)
+
 ```typescript
 // If completed, returns presigned URL or redirects
 // If not ready, returns status
 {
-  status: "queued" | "processing"
-  progress: number
+  status: "queued" | "processing";
+  progress: number;
   // OR redirects to presigned URL if completed
 }
 ```
 
 **DELETE /v1/download/:jobId** (Cancel job)
+
 ```typescript
 // Response
 {
-  jobId: string
-  status: "cancelled"
-  message: "Job cancelled successfully"
+  jobId: string;
+  status: "cancelled";
+  message: "Job cancelled successfully";
 }
 ```
 
@@ -605,6 +644,7 @@ data: {"progress": 100, "status": "completed", "downloadUrl": "https://..."}
 #### Redis Data Structures
 
 **Job Status (Hash)**
+
 ```
 Key: job:status:{jobId}
 Fields:
@@ -624,6 +664,7 @@ TTL: 24 hours (after completion)
 ```
 
 **Job Queue (BullMQ)**
+
 ```
 Queue: download-jobs
 Job Data:
@@ -639,6 +680,7 @@ Job Options:
 ```
 
 **User Job List (Set)**
+
 ```
 Key: user:jobs:{userId}
 Members: [jobId1, jobId2, ...]
@@ -646,6 +688,7 @@ TTL: 7 days
 ```
 
 **Rate Limiting (Counter)**
+
 ```
 Key: rate:limit:user:{userId}:window:{windowStart}
 Value: number of jobs created in window
@@ -658,104 +701,112 @@ TTL: 60 seconds (window size)
 
 ```typescript
 // Worker Service (separate process or same container with PM2)
-import { Worker, Job } from 'bullmq';
-import { Queue } from 'bullmq';
-import { RedisConnection } from './redis';
+import { Worker, Job } from "bullmq";
+import { Queue } from "bullmq";
+import { RedisConnection } from "./redis";
 
-const downloadQueue = new Queue('download-jobs', {
-  connection: RedisConnection
+const downloadQueue = new Queue("download-jobs", {
+  connection: RedisConnection,
 });
 
-const worker = new Worker('download-jobs', async (job: Job) => {
-  const { jobId, fileId, callbackUrl } = job.data;
-  
-  try {
-    // Update status to processing
-    await updateJobStatus(jobId, {
-      status: 'processing',
-      progress: 0
-    });
-    
-    // Simulate processing (or actual file generation)
-    const estimatedTime = getEstimatedTime(fileId);
-    const chunks = 10; // Progress updates
-    
-    for (let i = 1; i <= chunks; i++) {
-      // Simulate work
-      await sleep(estimatedTime / chunks);
-      
-      // Update progress
+const worker = new Worker(
+  "download-jobs",
+  async (job: Job) => {
+    const { jobId, fileId, callbackUrl } = job.data;
+
+    try {
+      // Update status to processing
       await updateJobStatus(jobId, {
-        progress: (i / chunks) * 100
+        status: "processing",
+        progress: 0,
       });
-      
-      // Publish progress via Redis Pub/Sub for SSE
-      await redis.publish(`job:${jobId}`, JSON.stringify({
-        progress: (i / chunks) * 100,
-        status: 'processing'
-      }));
-    }
-    
-    // Check/generate file in S3
-    const s3Result = await checkS3Availability(fileId);
-    
-    if (s3Result.available) {
-      // Generate presigned URL (1 hour TTL)
-      const presignedUrl = await generatePresignedUrl(s3Result.s3Key, 3600);
-      
-      // Update status to completed
+
+      // Simulate processing (or actual file generation)
+      const estimatedTime = getEstimatedTime(fileId);
+      const chunks = 10; // Progress updates
+
+      for (let i = 1; i <= chunks; i++) {
+        // Simulate work
+        await sleep(estimatedTime / chunks);
+
+        // Update progress
+        await updateJobStatus(jobId, {
+          progress: (i / chunks) * 100,
+        });
+
+        // Publish progress via Redis Pub/Sub for SSE
+        await redis.publish(
+          `job:${jobId}`,
+          JSON.stringify({
+            progress: (i / chunks) * 100,
+            status: "processing",
+          }),
+        );
+      }
+
+      // Check/generate file in S3
+      const s3Result = await checkS3Availability(fileId);
+
+      if (s3Result.available) {
+        // Generate presigned URL (1 hour TTL)
+        const presignedUrl = await generatePresignedUrl(s3Result.s3Key, 3600);
+
+        // Update status to completed
+        await updateJobStatus(jobId, {
+          status: "completed",
+          progress: 100,
+          downloadUrl: presignedUrl,
+          completedAt: new Date().toISOString(),
+        });
+
+        // Trigger webhook if provided
+        if (callbackUrl) {
+          await triggerWebhook(callbackUrl, {
+            jobId,
+            status: "completed",
+            downloadUrl: presignedUrl,
+          });
+        }
+
+        // Publish completion
+        await redis.publish(
+          `job:${jobId}`,
+          JSON.stringify({
+            status: "completed",
+            downloadUrl: presignedUrl,
+          }),
+        );
+      } else {
+        throw new Error("File not available in S3");
+      }
+    } catch (error) {
+      // Update status to failed
       await updateJobStatus(jobId, {
-        status: 'completed',
-        progress: 100,
-        downloadUrl: presignedUrl,
-        completedAt: new Date().toISOString()
+        status: "failed",
+        error: error.message,
       });
-      
+
       // Trigger webhook if provided
       if (callbackUrl) {
         await triggerWebhook(callbackUrl, {
           jobId,
-          status: 'completed',
-          downloadUrl: presignedUrl
+          status: "failed",
+          error: error.message,
         });
       }
-      
-      // Publish completion
-      await redis.publish(`job:${jobId}`, JSON.stringify({
-        status: 'completed',
-        downloadUrl: presignedUrl
-      }));
-      
-    } else {
-      throw new Error('File not available in S3');
+
+      throw error; // BullMQ will retry
     }
-    
-  } catch (error) {
-    // Update status to failed
-    await updateJobStatus(jobId, {
-      status: 'failed',
-      error: error.message
-    });
-    
-    // Trigger webhook if provided
-    if (callbackUrl) {
-      await triggerWebhook(callbackUrl, {
-        jobId,
-        status: 'failed',
-        error: error.message
-      });
-    }
-    
-    throw error; // BullMQ will retry
-  }
-}, {
-  connection: RedisConnection,
-  concurrency: 5, // Process 5 jobs concurrently
-  limiter: {
-    max: 10,
-    duration: 1000 // Max 10 jobs per second
-  }
-});
+  },
+  {
+    connection: RedisConnection,
+    concurrency: 5, // Process 5 jobs concurrently
+    limiter: {
+      max: 10,
+      duration: 1000, // Max 10 jobs per second
+    },
+  },
+);
 ```
 
 #### Worker Scaling
@@ -817,6 +868,7 @@ const worker = new Worker('download-jobs', async (job: Job) => {
 #### Problem Statement
 
 When clients retry requests (due to timeouts, network failures, or user actions), we must ensure:
+
 1. **No duplicate job processing** - Same request doesn't create multiple jobs
 2. **No duplicate work** - Same file doesn't get processed multiple times
 3. **Idempotent operations** - Repeated requests return same result
@@ -837,7 +889,7 @@ POST /v1/download/initiate
 // Server implementation
 async function initiateDownload(request) {
   const { file_ids, idempotency_key } = request;
-  
+
   // If idempotency key provided, check for existing job
   if (idempotency_key) {
     const existingJobId = await redis.get(`idempotency:${idempotency_key}`);
@@ -851,10 +903,10 @@ async function initiateDownload(request) {
       };
     }
   }
-  
+
   // Create new job...
   const jobId = crypto.randomUUID();
-  
+
   // Store idempotency key mapping (TTL: 24 hours)
   if (idempotency_key) {
     await redis.setex(
@@ -863,12 +915,13 @@ async function initiateDownload(request) {
       jobId
     );
   }
-  
+
   return { jobId, status: "queued" };
 }
 ```
 
 **Benefits:**
+
 - Client controls idempotency
 - Works across different sessions/devices
 - Prevents accidental duplicate requests
@@ -882,42 +935,42 @@ async function initiateDownload(request) {
 // Check for existing active job for same file + user
 async function checkExistingJob(fileId: number, userId?: string) {
   // Create deterministic key
-  const jobKey = userId 
+  const jobKey = userId
     ? `job:active:file:${fileId}:user:${userId}`
     : `job:active:file:${fileId}`;
-  
+
   const existingJobId = await redis.get(jobKey);
-  
+
   if (existingJobId) {
     const jobStatus = await getJobStatus(existingJobId);
-    
+
     // If job is still active (not completed/failed), return it
-    if (jobStatus.status === 'queued' || jobStatus.status === 'processing') {
+    if (jobStatus.status === "queued" || jobStatus.status === "processing") {
       return {
         existing: true,
         jobId: existingJobId,
-        status: jobStatus.status
+        status: jobStatus.status,
       };
     }
-    
+
     // If job completed recently, check if result is still valid
-    if (jobStatus.status === 'completed') {
+    if (jobStatus.status === "completed") {
       const completedAt = new Date(jobStatus.completedAt);
       const ageMinutes = (Date.now() - completedAt.getTime()) / 60000;
-      
+
       // If completed within last hour and URL still valid
       if (ageMinutes < 60 && jobStatus.downloadUrl) {
         return {
           existing: true,
           jobId: existingJobId,
-          status: 'completed',
+          status: "completed",
           downloadUrl: jobStatus.downloadUrl,
-          reuse: true
+          reuse: true,
         };
       }
     }
   }
-  
+
   return { existing: false };
 }
 
@@ -928,12 +981,15 @@ if (existing.existing) {
     jobId: existing.jobId,
     status: existing.status,
     downloadUrl: existing.downloadUrl,
-    message: existing.reuse ? "Reusing existing completed job" : "Existing job in progress"
+    message: existing.reuse
+      ? "Reusing existing completed job"
+      : "Existing job in progress",
   };
 }
 ```
 
 **Benefits:**
+
 - Prevents duplicate processing of same file for same user
 - Reuses completed results within TTL window
 - No client coordination needed
@@ -944,43 +1000,48 @@ if (existing.existing) {
 
 ```typescript
 // Use deterministic job IDs in BullMQ
-async function enqueueDownloadJob(jobId: string, fileId: number, userId?: string) {
+async function enqueueDownloadJob(
+  jobId: string,
+  fileId: number,
+  userId?: string,
+) {
   // Create deterministic job ID for BullMQ
-  const bullJobId = userId 
+  const bullJobId = userId
     ? `download-${fileId}-${userId}`
     : `download-${fileId}`;
-  
+
   // Check if job already in queue
   const existingJob = await downloadQueue.getJob(bullJobId);
   if (existingJob) {
     const state = await existingJob.getState();
-    if (state === 'waiting' || state === 'active') {
+    if (state === "waiting" || state === "active") {
       // Job already queued or processing
       return { alreadyQueued: true, jobId: existingJob.id };
     }
   }
-  
+
   // Add job with deterministic ID (BullMQ prevents duplicates)
   await downloadQueue.add(
-    'process-download',
+    "process-download",
     { jobId, fileId, userId },
     {
-      jobId: bullJobId,  // Deterministic ID prevents duplicates
+      jobId: bullJobId, // Deterministic ID prevents duplicates
       removeOnComplete: {
-        age: 86400,  // Remove completed jobs after 24h
-        count: 1000  // Keep last 1000 jobs
+        age: 86400, // Remove completed jobs after 24h
+        count: 1000, // Keep last 1000 jobs
       },
       removeOnFail: {
-        age: 604800  // Keep failed jobs for 7 days
-      }
-    }
+        age: 604800, // Keep failed jobs for 7 days
+      },
+    },
   );
-  
+
   return { alreadyQueued: false };
 }
 ```
 
 **Benefits:**
+
 - Queue-level deduplication
 - Prevents duplicate jobs even if API called multiple times
 - BullMQ handles deduplication automatically
@@ -991,13 +1052,13 @@ async function enqueueDownloadJob(jobId: string, fileId: number, userId?: string
 
 ```typescript
 // Worker checks before processing
-const worker = new Worker('download-jobs', async (job) => {
+const worker = new Worker("download-jobs", async (job) => {
   const { jobId, fileId, userId } = job.data;
-  
+
   // Acquire distributed lock (prevents concurrent processing of same file)
   const lockKey = `lock:process:file:${fileId}`;
   const lock = await acquireLock(lockKey, 300); // 5 minute lock
-  
+
   if (!lock) {
     // Another worker is processing this file
     // Wait and check if result exists
@@ -1008,9 +1069,9 @@ const worker = new Worker('download-jobs', async (job) => {
       return; // Skip processing
     }
     // Retry acquiring lock
-    throw new Error('Lock acquisition failed, will retry');
+    throw new Error("Lock acquisition failed, will retry");
   }
-  
+
   try {
     // Double-check: Has this file been processed?
     const existingResult = await redis.get(`result:file:${fileId}:completed`);
@@ -1018,30 +1079,29 @@ const worker = new Worker('download-jobs', async (job) => {
       const result = JSON.parse(existingResult);
       // Update this job with existing result
       await updateJobStatus(jobId, {
-        status: 'completed',
+        status: "completed",
         downloadUrl: result.downloadUrl,
         s3Key: result.s3Key,
-        completedAt: result.completedAt
+        completedAt: result.completedAt,
       });
       return; // Skip processing, reuse result
     }
-    
+
     // Process file...
     const result = await processFileDownload(fileId);
-    
+
     // Store result for future reuse (TTL: 1 hour)
     await redis.setex(
       `result:file:${fileId}:completed`,
       3600,
-      JSON.stringify(result)
+      JSON.stringify(result),
     );
-    
+
     // Update job status
     await updateJobStatus(jobId, {
-      status: 'completed',
-      ...result
+      status: "completed",
+      ...result,
     });
-    
   } finally {
     // Release lock
     await releaseLock(lockKey, lock);
@@ -1049,9 +1109,12 @@ const worker = new Worker('download-jobs', async (job) => {
 });
 
 // Distributed lock implementation (Redis-based)
-async function acquireLock(key: string, ttlSeconds: number): Promise<string | null> {
+async function acquireLock(
+  key: string,
+  ttlSeconds: number,
+): Promise<string | null> {
   const lockValue = crypto.randomUUID();
-  const acquired = await redis.set(key, lockValue, 'EX', ttlSeconds, 'NX');
+  const acquired = await redis.set(key, lockValue, "EX", ttlSeconds, "NX");
   return acquired ? lockValue : null;
 }
 
@@ -1069,6 +1132,7 @@ async function releaseLock(key: string, lockValue: string): Promise<void> {
 ```
 
 **Benefits:**
+
 - Prevents concurrent processing of same file by multiple workers
 - Reuses existing results (even across different job IDs)
 - Distributed lock ensures only one worker processes at a time
@@ -1079,42 +1143,46 @@ async function releaseLock(key: string, lockValue: string): Promise<void> {
 
 ```typescript
 // Rate limiting + deduplication at API level
-app.post('/v1/download/initiate', async (c) => {
+app.post("/v1/download/initiate", async (c) => {
   const { file_ids, idempotency_key } = await c.req.json();
-  const userId = c.get('userId'); // From auth middleware
-  
+  const userId = c.get("userId"); // From auth middleware
+
   // Create request fingerprint
   const requestFingerprint = crypto
-    .createHash('sha256')
+    .createHash("sha256")
     .update(JSON.stringify({ file_ids, userId, idempotency_key }))
-    .digest('hex');
-  
+    .digest("hex");
+
   // Check recent requests (last 60 seconds)
   const recentRequest = await redis.get(`request:${requestFingerprint}`);
   if (recentRequest) {
     const recentJobId = JSON.parse(recentRequest).jobId;
-    return c.json({
-      jobId: recentJobId,
-      status: "queued",
-      message: "Duplicate request detected, returning existing job"
-    }, 200);
+    return c.json(
+      {
+        jobId: recentJobId,
+        status: "queued",
+        message: "Duplicate request detected, returning existing job",
+      },
+      200,
+    );
   }
-  
+
   // Process request...
   const result = await initiateDownload({ file_ids, idempotency_key, userId });
-  
+
   // Cache request fingerprint (60 seconds TTL)
   await redis.setex(
     `request:${requestFingerprint}`,
     60,
-    JSON.stringify({ jobId: result.jobId, timestamp: Date.now() })
+    JSON.stringify({ jobId: result.jobId, timestamp: Date.now() }),
   );
-  
+
   return c.json(result, 202);
 });
 ```
 
 **Benefits:**
+
 - Prevents duplicate requests within short time window
 - Handles rapid-fire retries
 - Works even without client-side idempotency keys
@@ -1123,17 +1191,18 @@ app.post('/v1/download/initiate', async (c) => {
 
 #### Idempotency Summary Table
 
-| Layer | Mechanism | Scope | TTL | Prevents |
-|-------|-----------|-------|-----|----------|
-| **Client** | Idempotency Key | Per client request | 24h | Duplicate requests from same client |
-| **Server (File+User)** | File ID + User ID mapping | Per file per user | Job lifetime | Same file processed twice for same user |
-| **Queue** | Deterministic Job ID | Per file (or file+user) | Job lifetime | Duplicate jobs in queue |
-| **Worker** | Distributed Lock + Result Cache | Per file | 1h (results) | Concurrent processing, duplicate work |
-| **API** | Request Fingerprint | Per request | 60s | Rapid duplicate API calls |
+| Layer                  | Mechanism                       | Scope                   | TTL          | Prevents                                |
+| ---------------------- | ------------------------------- | ----------------------- | ------------ | --------------------------------------- |
+| **Client**             | Idempotency Key                 | Per client request      | 24h          | Duplicate requests from same client     |
+| **Server (File+User)** | File ID + User ID mapping       | Per file per user       | Job lifetime | Same file processed twice for same user |
+| **Queue**              | Deterministic Job ID            | Per file (or file+user) | Job lifetime | Duplicate jobs in queue                 |
+| **Worker**             | Distributed Lock + Result Cache | Per file                | 1h (results) | Concurrent processing, duplicate work   |
+| **API**                | Request Fingerprint             | Per request             | 60s          | Rapid duplicate API calls               |
 
 #### Result
 
 With all layers combined:
+
 - ✅ Same request returns same `jobId`
 - ✅ Same file processed once (results reused)
 - ✅ Retries are safe (no duplicate work)
@@ -1141,6 +1210,7 @@ With all layers combined:
 - ✅ Client-side and server-side protection
 
 **Example Flow:**
+
 ```
 Request 1: POST /initiate {file_id: 70000, idempotency_key: "abc"}
 → Creates job-123
@@ -1169,6 +1239,7 @@ Request 5: POST /initiate {file_id: 70000} (1 hour later, new request)
 #### Why Presigned URLs?
 
 **Direct Download Benefits:**
+
 - ✅ **Offload API Server**: Files downloaded directly from S3, not through API
 - ✅ **Reduced Bandwidth**: API server only handles metadata, not file streams
 - ✅ **Better Performance**: S3 optimized for file serving
@@ -1179,10 +1250,13 @@ Request 5: POST /initiate {file_id: 70000} (1 hour later, new request)
 
 ```typescript
 // Generate presigned URL after file processing
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-async function generatePresignedUrl(s3Key: string, expirationSeconds: number = 3600): Promise<string> {
+async function generatePresignedUrl(
+  s3Key: string,
+  expirationSeconds: number = 3600,
+): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: env.S3_BUCKET_NAME, // "downloads" from Challenge 1
     Key: s3Key, // e.g., "files/70000"
@@ -1209,16 +1283,16 @@ async function generatePresignedUrl(s3Key: string, expirationSeconds: number = 3
 // On status check, regenerate if expired
 async function getDownloadUrl(jobId: string): Promise<string | null> {
   const job = await getJobStatus(jobId);
-  
-  if (job.status !== 'completed' || !job.s3Key) {
+
+  if (job.status !== "completed" || !job.s3Key) {
     return null;
   }
-  
+
   // Check if existing URL is still valid
   if (job.downloadUrl && !isUrlExpired(job.downloadUrl)) {
     return job.downloadUrl;
   }
-  
+
   // Regenerate if expired
   const newUrl = await generatePresignedUrl(job.s3Key, 3600);
   await updateJobStatus(jobId, { downloadUrl: newUrl });
@@ -1234,26 +1308,28 @@ async function getDownloadUrl(jobId: string): Promise<string | null> {
 - **Compatibility**: Works with MinIO's S3-compatible API
 
 **Example Presigned URL:**
+
 ```
 http://minio:9000/downloads/files/70000?X-Amz-Algorithm=...
 ```
 
 **Note**: In production, MinIO would be behind a domain:
+
 ```
 https://storage.example.com/downloads/files/70000?...
 ```
 
 ### 4.5 Timeout Configuration
 
-| Layer | Timeout | Configuration |
-|-------|---------|---------------|
-| **Client** | 30s (initial request) | `REQUEST_TIMEOUT_MS` |
-| **Reverse Proxy** | 600s (SSE connections) | `proxy_read_timeout` |
-| **API Server** | 30s (HTTP), 600s (SSE) | Hono timeout middleware |
-| **Worker Process** | 300s (per job) | BullMQ job timeout |
-| **Redis** | 5s (connection) | Redis client config |
-| **S3** | 60s (per operation) | AWS SDK config |
-| **Presigned URL** | 3600s (1 hour) | S3 URL expiration |
+| Layer              | Timeout                | Configuration           |
+| ------------------ | ---------------------- | ----------------------- |
+| **Client**         | 30s (initial request)  | `REQUEST_TIMEOUT_MS`    |
+| **Reverse Proxy**  | 600s (SSE connections) | `proxy_read_timeout`    |
+| **API Server**     | 30s (HTTP), 600s (SSE) | Hono timeout middleware |
+| **Worker Process** | 300s (per job)         | BullMQ job timeout      |
+| **Redis**          | 5s (connection)        | Redis client config     |
+| **S3**             | 60s (per operation)    | AWS SDK config          |
+| **Presigned URL**  | 3600s (1 hour)         | S3 URL expiration       |
 
 ---
 
@@ -1264,6 +1340,7 @@ https://storage.example.com/downloads/files/70000?...
 #### Timeout Settings
 
 **Page Rules** (if using Cloudflare):
+
 ```
 URL Pattern: *api.example.com/v1/download/*
 Settings:
@@ -1272,10 +1349,10 @@ Settings:
 ```
 
 **Workers/Transform Rules** (Recommended):
+
 ```javascript
 // Increase timeout for SSE endpoints
-if (request.url.includes('/v1/download/') && 
-    request.url.includes('/stream')) {
+if (request.url.includes("/v1/download/") && request.url.includes("/stream")) {
   // Allow long-running connections
   // Cloudflare default: 100s, increase via Workers
 }
@@ -1339,7 +1416,7 @@ server {
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 600s;
-        
+
         # Important for SSE
         chunked_transfer_encoding on;
         proxy_set_header X-Accel-Buffering no;
@@ -1379,7 +1456,7 @@ Target Group Settings:
   - Health Check Timeout: 5s
   - Healthy Threshold: 2
   - Unhealthy Threshold: 3
-  
+
   - Deregistration Delay: 30s
   - Connection Draining: Enabled
 ```
@@ -1410,12 +1487,12 @@ Rule 2: Default
 
 ```typescript
 // hooks/useDownload.ts
-import { useState, useEffect, useCallback } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 interface DownloadJob {
   jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: "queued" | "processing" | "completed" | "failed";
   progress: number;
   downloadUrl?: string;
   error?: string;
@@ -1427,20 +1504,20 @@ export function useDownload(fileId: number) {
   // Initiate download
   const initiateMutation = useMutation({
     mutationFn: async (fileId: number) => {
-      const response = await fetch('/api/v1/download/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_ids: [fileId] })
+      const response = await fetch("/api/v1/download/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_ids: [fileId] }),
       });
       const data = await response.json();
       setJobId(data.jobId);
       return data;
-    }
+    },
   });
 
   // Poll job status (fallback)
   const { data: jobStatus, refetch } = useQuery({
-    queryKey: ['download', jobId],
+    queryKey: ["download", jobId],
     queryFn: async () => {
       if (!jobId) return null;
       const response = await fetch(`/api/v1/download/status/${jobId}`);
@@ -1450,17 +1527,17 @@ export function useDownload(fileId: number) {
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       // Stop polling if completed or failed
-      if (status === 'completed' || status === 'failed') {
+      if (status === "completed" || status === "failed") {
         return false;
       }
       // Poll every 5 seconds
       return 5000;
-    }
+    },
   });
 
   // SSE connection (premium feature)
   useEffect(() => {
-    if (!jobId || jobStatus?.status === 'completed') return;
+    if (!jobId || jobStatus?.status === "completed") return;
 
     const eventSource = new EventSource(`/api/v1/download/${jobId}/stream`);
 
@@ -1489,11 +1566,11 @@ export function useDownload(fileId: number) {
     jobId,
     jobStatus,
     isLoading: initiateMutation.isPending,
-    isProcessing: jobStatus?.status === 'processing',
-    isCompleted: jobStatus?.status === 'completed',
+    isProcessing: jobStatus?.status === "processing",
+    isCompleted: jobStatus?.status === "completed",
     progress: jobStatus?.progress || 0,
     downloadUrl: jobStatus?.downloadUrl,
-    error: jobStatus?.error
+    error: jobStatus?.error,
   };
 }
 ```
@@ -1620,9 +1697,9 @@ export function ProgressBar({ progress, status, estimatedTime }: ProgressBarProp
 ```typescript
 // Auto-download on completion
 useEffect(() => {
-  if (jobStatus?.status === 'completed' && jobStatus.downloadUrl) {
+  if (jobStatus?.status === "completed" && jobStatus.downloadUrl) {
     // Option 1: Direct download
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = jobStatus.downloadUrl;
     link.download = `file-${fileId}.zip`;
     link.click();
@@ -1672,20 +1749,22 @@ if (jobStatus?.status === 'failed') {
 
 ```typescript
 // Handle multiple downloads per user
-const [activeDownloads, setActiveDownloads] = useState<Map<string, DownloadJob>>(new Map());
+const [activeDownloads, setActiveDownloads] = useState<
+  Map<string, DownloadJob>
+>(new Map());
 
 const handleMultipleDownloads = async (fileIds: number[]) => {
   const jobs = await Promise.all(
-    fileIds.map(fileId => initiateDownload(fileId))
+    fileIds.map((fileId) => initiateDownload(fileId)),
   );
 
   // Track all active downloads
-  jobs.forEach(job => {
-    setActiveDownloads(prev => new Map(prev).set(job.jobId, job));
+  jobs.forEach((job) => {
+    setActiveDownloads((prev) => new Map(prev).set(job.jobId, job));
   });
 
   // Monitor all downloads
-  jobs.forEach(job => {
+  jobs.forEach((job) => {
     pollJobStatus(job.jobId);
   });
 };
@@ -1712,7 +1791,7 @@ Headers:
 async function initiateDownload(request, context) {
   const traceId = extractTraceId(context.headers['traceparent']);
   const requestId = context.headers['x-request-id'];
-  
+
   // Create OpenTelemetry span
   const span = tracer.startSpan('download.initiate', {
     attributes: {
@@ -1721,20 +1800,20 @@ async function initiateDownload(request, context) {
       'request.id': requestId
     }
   });
-  
+
   try {
     const jobId = await createJob(request);
-    
+
     // Propagate trace to job metadata
     await redis.hset(`job:status:${jobId}`, {
       traceId,
       requestId,
       createdAt: new Date().toISOString()
     });
-    
+
     span.setAttribute('job.id', jobId);
     span.end();
-    
+
     return { jobId };
   } catch (error) {
     span.recordException(error);
@@ -1748,25 +1827,25 @@ async function initiateDownload(request, context) {
 
 ```typescript
 // Worker creates child span for processing
-const worker = new Worker('download-jobs', async (job) => {
+const worker = new Worker("download-jobs", async (job) => {
   const { jobId, fileId, traceId } = job.data;
-  
+
   // Create span linked to parent trace
-  const span = tracer.startSpan('download.process', {
+  const span = tracer.startSpan("download.process", {
     links: [{ context: { traceId } }],
     attributes: {
-      'job.id': jobId,
-      'file.id': fileId
-    }
+      "job.id": jobId,
+      "file.id": fileId,
+    },
   });
-  
+
   try {
     // Processing steps create child spans
-    const checkSpan = tracer.startSpan('s3.check', { parent: span });
+    const checkSpan = tracer.startSpan("s3.check", { parent: span });
     const s3Result = await checkS3Availability(fileId);
     checkSpan.end();
-    
-    span.setAttribute('file.available', s3Result.available);
+
+    span.setAttribute("file.available", s3Result.available);
     span.end();
   } catch (error) {
     span.recordException(error);
@@ -1782,23 +1861,23 @@ const worker = new Worker('download-jobs', async (job) => {
 ```typescript
 // Errors include trace context
 app.onError((err, c) => {
-  const traceId = c.get('traceId');
-  const requestId = c.get('requestId');
-  const jobId = c.get('jobId');
-  
+  const traceId = c.get("traceId");
+  const requestId = c.get("requestId");
+  const jobId = c.get("jobId");
+
   Sentry.captureException(err, {
     tags: {
       trace_id: traceId,
       request_id: requestId,
-      job_id: jobId
+      job_id: jobId,
     },
     contexts: {
       trace: {
-        trace_id: traceId
-      }
-    }
+        trace_id: traceId,
+      },
+    },
   });
-  
+
   return c.json({ error: err.message, traceId, requestId }, 500);
 });
 ```
@@ -1807,12 +1886,12 @@ app.onError((err, c) => {
 
 ```typescript
 // Structured logging with trace IDs
-logger.info('Download initiated', {
+logger.info("Download initiated", {
   jobId,
   fileId,
   traceId,
   requestId,
-  userId
+  userId,
 });
 
 // All logs include trace context for correlation
@@ -1832,19 +1911,20 @@ logger.info('Download initiated', {
 
 ```typescript
 // Metrics include trace context
-metrics.increment('download.job.created', {
+metrics.increment("download.job.created", {
   file_id: fileId,
-  trace_id: traceId
+  trace_id: traceId,
 });
 
-metrics.timing('download.job.duration', duration, {
+metrics.timing("download.job.duration", duration, {
   job_id: jobId,
   trace_id: traceId,
-  status: 'completed'
+  status: "completed",
 });
 ```
 
 **Benefits:**
+
 - End-to-end traceability from user click to file download
 - Errors in Sentry tagged with trace IDs
 - Logs correlated by trace ID
@@ -1860,26 +1940,28 @@ metrics.timing('download.job.duration', duration, {
 **Problem**: User closes browser while download is processing.
 
 **Solution**:
+
 - Job continues processing in background
 - Job status stored in Redis (TTL: 24 hours)
 - User can retrieve status later using `jobId`
 - Presigned URL valid for 1 hour after completion
 
 **Implementation**:
+
 ```typescript
 // Store jobId in localStorage before closing
-window.addEventListener('beforeunload', () => {
+window.addEventListener("beforeunload", () => {
   if (jobId) {
-    localStorage.setItem('pendingDownloads', JSON.stringify([jobId]));
+    localStorage.setItem("pendingDownloads", JSON.stringify([jobId]));
   }
 });
 
 // On page load, check for pending downloads
 useEffect(() => {
-  const pending = localStorage.getItem('pendingDownloads');
+  const pending = localStorage.getItem("pendingDownloads");
   if (pending) {
     const jobIds = JSON.parse(pending);
-    jobIds.forEach(id => checkJobStatus(id));
+    jobIds.forEach((id) => checkJobStatus(id));
   }
 }, []);
 ```
@@ -1889,17 +1971,19 @@ useEffect(() => {
 **Problem**: User initiates multiple downloads simultaneously.
 
 **Solution**:
+
 - Rate limiting per user (e.g., max 5 concurrent jobs)
 - Queue prioritization (FIFO or priority-based)
 - Resource limits per user
 
 **Implementation**:
+
 ```typescript
 // Rate limiting middleware
 const checkUserJobLimit = async (userId: string) => {
   const activeJobs = await redis.zcount(`user:jobs:${userId}`, 0, Date.now());
   if (activeJobs >= MAX_CONCURRENT_JOBS_PER_USER) {
-    throw new Error('Maximum concurrent downloads reached');
+    throw new Error("Maximum concurrent downloads reached");
   }
 };
 ```
@@ -1909,16 +1993,18 @@ const checkUserJobLimit = async (userId: string) => {
 **Problem**: Presigned URL expires before user downloads.
 
 **Solution**:
+
 - Generate new presigned URL on status check if expired
 - Store S3 key, not presigned URL in Redis
 - Generate presigned URL on-demand
 
 **Implementation**:
+
 ```typescript
 // On status check, regenerate presigned URL if needed
 const getDownloadUrl = async (jobId: string) => {
   const job = await getJobStatus(jobId);
-  if (job.status === 'completed' && job.s3Key) {
+  if (job.status === "completed" && job.s3Key) {
     // Generate fresh presigned URL (1 hour TTL)
     const presignedUrl = await generatePresignedUrl(job.s3Key, 3600);
     await updateJobStatus(jobId, { downloadUrl: presignedUrl });
@@ -1933,6 +2019,7 @@ const getDownloadUrl = async (jobId: string) => {
 **Problem**: Job fails due to transient errors.
 
 **Solution**:
+
 - BullMQ automatic retries with exponential backoff
 - Max 3 attempts
 - Failed jobs logged for debugging
@@ -1944,18 +2031,20 @@ const getDownloadUrl = async (jobId: string) => {
 **Problem**: Too many jobs queued, system overloaded.
 
 **Solution**:
+
 - Queue size limits
 - Job prioritization
 - Graceful degradation (return 503 if queue full)
 
 **Implementation**:
+
 ```typescript
 // Check queue size before enqueueing
 const queueSize = await downloadQueue.getWaitingCount();
 if (queueSize > MAX_QUEUE_SIZE) {
   return res.status(503).json({
-    error: 'Service temporarily unavailable',
-    message: 'Queue is full. Please try again later.'
+    error: "Service temporarily unavailable",
+    message: "Queue is full. Please try again later.",
   });
 }
 ```
@@ -2018,6 +2107,7 @@ This Hybrid Architecture provides a robust, scalable solution for handling varia
 **⚠️ Important: This is a Design Document Only**
 
 This `ARCHITECTURE.md` document describes:
+
 - ✅ **Design decisions** and rationale
 - ✅ **System architecture** and data flows
 - ✅ **API contracts** and schemas
@@ -2025,12 +2115,14 @@ This `ARCHITECTURE.md` document describes:
 - ✅ **Configuration examples** and best practices
 
 This document does **NOT** include:
+
 - ❌ Actual code implementation (that would be in `src/` directory)
 - ❌ Working endpoints (that would modify `src/index.ts`)
 - ❌ Worker process code (that would be in `src/workers/`)
 - ❌ Frontend implementation (that's Challenge 4)
 
 **Next Steps for Implementation** (Future Phase):
+
 1. Set up Redis + BullMQ infrastructure
 2. Implement worker process for job processing
 3. Enhance existing `/v1/download/initiate` endpoint
@@ -2047,13 +2139,13 @@ The architecture is designed to be implemented incrementally, starting with poll
 
 ### A. Technology Choices Summary
 
-| Component | Technology | Justification |
-|-----------|-----------|---------------|
+| Component | Technology     | Justification                      |
+| --------- | -------------- | ---------------------------------- |
 | Job Queue | Redis + BullMQ | Fast, reliable, hackathon-friendly |
-| Cache | Redis | Same as queue, efficient |
-| Storage | MinIO/S3 | S3-compatible, presigned URLs |
-| API | Hono | Existing, fast, SSE support |
-| Frontend | React/Next.js | Popular, well-supported |
+| Cache     | Redis          | Same as queue, efficient           |
+| Storage   | MinIO/S3       | S3-compatible, presigned URLs      |
+| API       | Hono           | Existing, fast, SSE support        |
+| Frontend  | React/Next.js  | Popular, well-supported            |
 
 ### B. Cost Implications
 
@@ -2083,6 +2175,7 @@ The architecture is designed to be implemented incrementally, starting with poll
 ### Why Not Pure Polling?
 
 **Why we didn't choose pure polling:**
+
 - While simpler, polling alone doesn't provide optimal UX for web users
 - Constant HTTP requests waste bandwidth and server resources
 - Not truly real-time, causing UX delays
@@ -2092,6 +2185,7 @@ The architecture is designed to be implemented incrementally, starting with poll
 ### Why Not Pure SSE/WebSocket?
 
 **Why we didn't choose pure SSE/WebSocket:**
+
 - Higher memory overhead (persistent connections)
 - Complex proxy configuration
 - Not all clients support it (mobile apps need polyfills)
@@ -2102,6 +2196,7 @@ The architecture is designed to be implemented incrementally, starting with poll
 ### Why Hybrid Instead of Single Pattern?
 
 **Key advantages of hybrid:**
+
 1. **Flexibility**: Right tool for each use case (web, mobile, backend)
 2. **Resilience**: If SSE fails, fallback to polling automatically
 3. **Progressive Enhancement**: Start with polling, add SSE/webhooks incrementally
@@ -2112,6 +2207,7 @@ The architecture is designed to be implemented incrementally, starting with poll
 **Given: Single VM (2 vCPU, 8GB RAM)**
 
 **Our architecture fits because:**
+
 - Redis: ~100MB (lightweight)
 - API + Workers: ~400MB (efficient resource usage)
 - MinIO: ~200MB (Challenge 1)
@@ -2122,10 +2218,10 @@ The architecture is designed to be implemented incrementally, starting with poll
 ### Alternative Considerations
 
 **If infrastructure constraints were different:**
+
 - **More RAM available**: Could use more aggressive SSE connections
 - **Cloud environment**: Could use AWS SQS instead of Redis
 - **Multiple VMs**: Could separate workers into dedicated instances
 - **Managed services**: Could use managed Redis/queue services
 
 **However**, for hackathon constraints, self-hosted hybrid approach provides best balance of functionality, cost, and reliability.
-
