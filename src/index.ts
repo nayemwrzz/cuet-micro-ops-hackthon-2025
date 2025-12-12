@@ -8,6 +8,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { Scalar } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -46,6 +47,7 @@ const EnvSchema = z.object({
   DOWNLOAD_DELAY_MIN_MS: z.coerce.number().int().min(0).default(10000), // 10 seconds
   DOWNLOAD_DELAY_MAX_MS: z.coerce.number().int().min(0).default(200000), // 200 seconds
   DOWNLOAD_DELAY_ENABLED: z.coerce.boolean().default(true),
+  JAEGER_QUERY_URL: optionalUrl,
 });
 
 // Parse and validate environment
@@ -70,7 +72,11 @@ const otelSDK = new NodeSDK({
   resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: "delineate-hackathon-challenge",
   }),
-  traceExporter: new OTLPTraceExporter(),
+  traceExporter: env.OTEL_EXPORTER_OTLP_ENDPOINT
+    ? new OTLPTraceExporter({
+        url: `${env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`,
+      })
+    : new OTLPTraceExporter(), // Default to http://localhost:4318/v1/traces
 });
 otelSDK.start();
 
@@ -243,6 +249,21 @@ const DownloadStartRequestSchema = z
   })
   .openapi("DownloadStartRequest");
 
+const DownloadStatusResponseSchema = z
+  .object({
+    file_id: z.number().int(),
+    jobId: z.string().optional(),
+    status: z.enum(["pending", "in_progress", "completed", "failed", "not_found"]),
+    createdAt: z.string().optional(),
+    completedAt: z.string().optional(),
+    duration: z.number().optional(),
+    error: z.string().optional(),
+    downloadUrl: z.string().nullable().optional(),
+    size: z.number().int().nullable().optional(),
+    processingTimeMs: z.number().optional(),
+  })
+  .openapi("DownloadStatusResponse");
+
 const DownloadStartResponseSchema = z
   .object({
     file_id: z.number().int(),
@@ -269,7 +290,8 @@ const sanitizeS3Key = (fileId: number): string => {
   // Ensure fileId is a valid integer within bounds (already validated by Zod)
   const sanitizedId = Math.floor(Math.abs(fileId));
   // Construct safe S3 key without user-controlled path components
-  return `downloads/${String(sanitizedId)}.zip`;
+  // Note: Bucket is already 'downloads', so key should be just the filename
+  return `${String(sanitizedId)}.zip`;
 };
 
 // S3 health check
@@ -341,6 +363,50 @@ const getRandomDelay = (): number => {
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+// In-memory job tracking (for demo - in production, use Redis)
+interface JobStatus {
+  jobId: string;
+  fileId: number;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  createdAt: string;
+  completedAt?: string;
+  duration?: number;
+  error?: string;
+  downloadUrl?: string | null;
+  size?: number | null;
+  processingTimeMs?: number;
+}
+
+const jobStore = new Map<number, JobStatus>();
+
+// Helper to get or create job status
+const getJobStatus = (fileId: number): JobStatus | null => {
+  return jobStore.get(fileId) || null;
+};
+
+// Helper to update job status
+const updateJobStatus = (
+  fileId: number,
+  updates: Partial<JobStatus>,
+): void => {
+  const existing = jobStore.get(fileId);
+  if (existing) {
+    jobStore.set(fileId, { ...existing, ...updates });
+  }
+};
+
+// Helper to create job
+const createJob = (fileId: number, jobId: string): JobStatus => {
+  const job: JobStatus = {
+    jobId,
+    fileId,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+  jobStore.set(fileId, job);
+  return job;
+};
 
 // Routes
 const rootRoute = createRoute({
@@ -582,7 +648,12 @@ const downloadStartRoute = createRoute({
 
 app.openapi(downloadStartRoute, async (c) => {
   const { file_id } = c.req.valid("json");
+  const jobId = crypto.randomUUID();
   const startTime = Date.now();
+
+  // Create job in tracking system
+  createJob(file_id, jobId);
+  updateJobStatus(file_id, { status: "in_progress" });
 
   // Get random delay and log it
   const delayMs = getRandomDelay();
@@ -590,7 +661,7 @@ app.openapi(downloadStartRoute, async (c) => {
   const minDelaySec = (env.DOWNLOAD_DELAY_MIN_MS / 1000).toFixed(0);
   const maxDelaySec = (env.DOWNLOAD_DELAY_MAX_MS / 1000).toFixed(0);
   console.log(
-    `[Download] Starting file_id=${String(file_id)} | delay=${delaySec}s (range: ${minDelaySec}s-${maxDelaySec}s) | enabled=${String(env.DOWNLOAD_DELAY_ENABLED)}`,
+    `[Download] Starting file_id=${String(file_id)} | jobId=${jobId} | delay=${delaySec}s (range: ${minDelaySec}s-${maxDelaySec}s) | enabled=${String(env.DOWNLOAD_DELAY_ENABLED)}`,
   );
 
   // Simulate long-running download process
@@ -599,17 +670,28 @@ app.openapi(downloadStartRoute, async (c) => {
   // Check if file is available in S3
   const s3Result = await checkS3Availability(file_id);
   const processingTimeMs = Date.now() - startTime;
+  const completedAt = new Date().toISOString();
 
   console.log(
-    `[Download] Completed file_id=${String(file_id)}, actual_time=${String(processingTimeMs)}ms, available=${String(s3Result.available)}`,
+    `[Download] Completed file_id=${String(file_id)}, jobId=${jobId}, actual_time=${String(processingTimeMs)}ms, available=${String(s3Result.available)}`,
   );
 
   if (s3Result.available) {
+    const downloadUrl = `https://storage.example.com/${s3Result.s3Key ?? ""}?token=${crypto.randomUUID()}`;
+    updateJobStatus(file_id, {
+      status: "completed",
+      completedAt,
+      duration: processingTimeMs,
+      downloadUrl,
+      size: s3Result.size,
+      processingTimeMs,
+    });
+
     return c.json(
       {
         file_id,
         status: "completed" as const,
-        downloadUrl: `https://storage.example.com/${s3Result.s3Key ?? ""}?token=${crypto.randomUUID()}`,
+        downloadUrl,
         size: s3Result.size,
         processingTimeMs,
         message: `Download ready after ${(processingTimeMs / 1000).toFixed(1)} seconds`,
@@ -617,6 +699,14 @@ app.openapi(downloadStartRoute, async (c) => {
       200,
     );
   } else {
+    updateJobStatus(file_id, {
+      status: "failed",
+      completedAt,
+      duration: processingTimeMs,
+      error: "File not found in storage",
+      processingTimeMs,
+    });
+
     return c.json(
       {
         file_id,
@@ -629,6 +719,363 @@ app.openapi(downloadStartRoute, async (c) => {
       200,
     );
   }
+});
+
+// Download Status Route - Get job status by file ID
+const downloadStatusRoute = createRoute({
+  method: "get",
+  path: "/v1/download/status/{fileId}",
+  tags: ["Download"],
+  summary: "Get download job status",
+  description: "Returns the status of a download job by file ID",
+  request: {
+    params: z.object({
+      fileId: z.coerce.number().int().min(10000).max(100000000),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Job status found",
+      content: {
+        "application/json": {
+          schema: DownloadStatusResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Job not found",
+      content: {
+        "application/json": {
+          schema: z.object({
+            error: z.string(),
+            message: z.string(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+app.openapi(downloadStatusRoute, async (c) => {
+  try {
+    const params = c.req.valid("params");
+    
+    // Handle case where params might be undefined
+    if (!params || typeof params.fileId === "undefined") {
+      // Try to get fileId from path parameter directly
+      const fileIdParam = c.req.param("fileId");
+      if (!fileIdParam) {
+        return c.json(
+          {
+            error: "Bad Request",
+            message: "fileId parameter is required",
+          },
+          400,
+        );
+      }
+      
+      const fileId = parseInt(fileIdParam, 10);
+      if (isNaN(fileId) || fileId < 10000 || fileId > 100000000) {
+        return c.json(
+          {
+            error: "Bad Request",
+            message: "fileId must be a number between 10000 and 100000000",
+          },
+          400,
+        );
+      }
+      
+      const job = getJobStatus(fileId);
+      if (!job) {
+        return c.json(
+          {
+            file_id: fileId,
+            status: "not_found" as const,
+          },
+          200,
+        );
+      }
+      
+      return c.json(job, 200);
+    }
+    
+    const { fileId } = params;
+    const job = getJobStatus(fileId);
+
+    if (!job) {
+      return c.json(
+        {
+          file_id: fileId,
+          status: "not_found" as const,
+        },
+        200, // Return 200 with not_found status for frontend compatibility
+      );
+    }
+
+    return c.json(job, 200);
+  } catch (error) {
+    console.error("[Download Status] Error:", error);
+    return c.json(
+      {
+        error: "Internal Server Error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      500,
+    );
+  }
+});
+
+// Jaeger Traces Proxy Route - Fetch traces from Jaeger API (bypasses CORS)
+const jaegerTracesRoute = createRoute({
+  method: "get",
+  path: "/v1/jaeger/traces",
+  tags: ["Observability"],
+  summary: "Get traces from Jaeger",
+  description: "Proxy endpoint to fetch traces from Jaeger API (bypasses CORS)",
+  request: {
+    query: z.object({
+      service: z.string().optional().openapi({
+        description: "Service name to filter traces",
+      }),
+      limit: z.coerce.number().int().min(1).max(100).optional().default(20).openapi({
+        description: "Maximum number of traces to return",
+      }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Traces from Jaeger",
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(z.any()),
+            total: z.number(),
+            limit: z.number(),
+            offset: z.number(),
+          }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
+    },
+  },
+});
+
+app.openapi(jaegerTracesRoute, async (c) => {
+  const { service, limit } = c.req.valid("query");
+  const jaegerUrl = env.JAEGER_QUERY_URL || "http://delineate-jaeger:16686";
+
+  try {
+    // Jaeger API requires service parameter, so if no service provided,
+    // try multiple known services and combine results
+    if (!service) {
+      console.log(`[Jaeger Proxy] No service specified, trying multiple services`);
+      const services = [
+        "delineate-observability-dashboard",
+        "delineate-hackathon-challenge",
+      ];
+      
+      let allTraces: any[] = [];
+      
+      for (const svc of services) {
+        try {
+          const queryParams = new URLSearchParams();
+          queryParams.append("service", svc);
+          queryParams.append("limit", limit.toString());
+          const jaegerApiUrl = `${jaegerUrl}/api/traces?${queryParams.toString()}`;
+          
+          const response = await fetch(jaegerApiUrl);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.data && Array.isArray(data.data)) {
+              allTraces = [...allTraces, ...data.data];
+              console.log(`[Jaeger Proxy] Found ${data.data.length} traces for ${svc}`);
+            }
+          }
+        } catch (svcError) {
+          console.warn(`[Jaeger Proxy] Failed to fetch traces for ${svc}:`, svcError);
+        }
+      }
+      
+      return c.json({
+        data: allTraces,
+        total: allTraces.length,
+        limit: limit,
+        offset: 0,
+      }, 200);
+    }
+
+    // Build query URL with service
+    const queryParams = new URLSearchParams();
+    queryParams.append("service", service);
+    queryParams.append("limit", limit.toString());
+
+    const jaegerApiUrl = `${jaegerUrl}/api/traces?${queryParams.toString()}`;
+    console.log(`[Jaeger Proxy] Fetching traces from: ${jaegerApiUrl}`);
+
+    // Fetch from Jaeger API
+    const response = await fetch(jaegerApiUrl);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Jaeger Proxy] Error: ${response.status} ${response.statusText}`, errorText);
+      return c.json(
+        {
+          error: "Failed to fetch traces from Jaeger",
+          message: `Jaeger API returned ${response.status}: ${errorText}`,
+        },
+        500,
+      );
+    }
+
+    const data = await response.json();
+    console.log(`[Jaeger Proxy] Fetched ${data.data?.length || 0} traces`);
+    
+    return c.json(data, 200);
+  } catch (error) {
+    console.error("[Jaeger Proxy] Error:", error);
+    return c.json(
+      {
+        error: "Internal Server Error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      500,
+    );
+  }
+});
+
+// Test Trace Endpoints - For demonstrating Jaeger traces to judges
+const testTraceErrorRoute = createRoute({
+  method: "get",
+  path: "/v1/test/trace/error",
+  tags: ["Test"],
+  summary: "Test trace with error (for demo)",
+  description: "Intentionally fails to demonstrate error tracing in Jaeger",
+  responses: {
+    500: {
+      description: "Intentional error for tracing demo",
+    },
+  },
+});
+
+app.openapi(testTraceErrorRoute, async (c) => {
+  const tracer = trace.getTracer("delineate-hackathon-challenge");
+  
+  return tracer.startActiveSpan("test.error.trace", async (span) => {
+    try {
+      span.setAttribute("test.type", "error_demo");
+      span.setAttribute("error.scenario", "tcp_connection_failure");
+      
+      // Simulate a TCP connection error by trying to connect to a non-existent URL
+      span.addEvent("Attempting connection to invalid URL");
+      
+      const invalidUrl = "http://invalid-host-that-does-not-exist-12345:8080/api";
+      console.log(`[Test Trace] Attempting to connect to: ${invalidUrl}`);
+      
+      const response = await fetch(invalidUrl, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000), // 5 second timeout
+      });
+      
+      span.setAttribute("http.status_code", response.status);
+      span.end();
+      
+      return c.json({ message: "Unexpected success" }, 200);
+    } catch (error: any) {
+      // Capture the error in the span
+      span.recordException(error);
+      span.setAttribute("error.name", error.name || "UnknownError");
+      span.setAttribute("error.message", error.message || String(error));
+      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+      span.end();
+      
+      console.error("[Test Trace] Error captured:", error);
+      
+      return c.json(
+        {
+          error: "Intentional Error for Tracing Demo",
+          message: error.message || "Connection failed",
+          type: error.name || "NetworkError",
+          traceId: span.spanContext().traceId,
+        },
+        500,
+      );
+    }
+  });
+});
+
+const testTraceSuccessRoute = createRoute({
+  method: "get",
+  path: "/v1/test/trace/success",
+  tags: ["Test"],
+  summary: "Test trace with success (for demo)",
+  description: "Successful operation to demonstrate normal tracing in Jaeger",
+  responses: {
+    200: {
+      description: "Successful trace demo",
+    },
+  },
+});
+
+app.openapi(testTraceSuccessRoute, async (c) => {
+  const tracer = trace.getTracer("delineate-hackathon-challenge");
+  
+  return tracer.startActiveSpan("test.success.trace", async (span) => {
+    try {
+      span.setAttribute("test.type", "success_demo");
+      span.setAttribute("operation", "health_check");
+      
+      // Simulate a successful operation
+      span.addEvent("Checking service health");
+      
+      // Check internal health
+      const healthCheck = await checkS3Health();
+      span.setAttribute("health.status", healthCheck ? "healthy" : "unhealthy");
+      
+      span.addEvent("Health check completed");
+      
+      // Add a child span to show trace hierarchy
+      tracer.startActiveSpan("test.success.child_operation", {
+        attributes: {
+          "child.operation": "data_processing",
+        },
+      }, (childSpan) => {
+        // Simulate some work
+        const startTime = Date.now();
+        while (Date.now() - startTime < 50) {
+          // Small delay
+        }
+        childSpan.setAttribute("processing.time_ms", Date.now() - startTime);
+        childSpan.end();
+      });
+      
+      span.setStatus({ code: SpanStatusCode.OK });
+      span.end();
+      
+      return c.json(
+        {
+          message: "Successful trace demo",
+          status: "success",
+          health: healthCheck ? "healthy" : "unhealthy",
+          traceId: span.spanContext().traceId,
+        },
+        200,
+      );
+    } catch (error: any) {
+      span.recordException(error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+      span.end();
+      
+      return c.json(
+        {
+          error: "Unexpected error",
+          message: error.message,
+        },
+        500,
+      );
+    }
+  });
 });
 
 // OpenAPI spec endpoint (disabled in production)

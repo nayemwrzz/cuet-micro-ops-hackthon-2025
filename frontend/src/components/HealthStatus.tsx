@@ -93,7 +93,7 @@ export default function HealthStatus() {
             {import.meta.env.VITE_NODE_ENV || "development"}
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            {health?.version || "N/A"}
+            {health?.version }
           </p>
         </div>
       </div>

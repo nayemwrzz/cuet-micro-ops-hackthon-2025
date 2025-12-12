@@ -57,6 +57,7 @@ services:
     environment:
       - NODE_ENV=development
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://delineate-jaeger:4318
+      - JAEGER_QUERY_URL=http://delineate-jaeger:16686
       - SENTRY_DSN=https://d52bcf775ae313a6ce779b8d47d8dc89@o4510520924045312.ingest.de.sentry.io/4510520925945936
       # S3 Configuration for MinIO
       - S3_ENDPOINT=http://minio:9000
@@ -76,8 +77,9 @@ services:
   delineate-jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
-      - "16686:16686"
-      - "4318:4318"
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     networks:

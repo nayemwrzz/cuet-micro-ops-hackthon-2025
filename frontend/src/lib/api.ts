@@ -172,6 +172,9 @@ export const apiClient = {
   initiateDownload: (fileId: number) =>
     api.post("/v1/download/check", { file_id: fileId }),
 
+  startDownload: (fileId: number) =>
+    api.post("/v1/download/start", { file_id: fileId }),
+
   getDownloadStatus: (fileId: number) =>
     api.get(`/v1/download/status/${fileId}`),
 

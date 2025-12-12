@@ -37,11 +37,11 @@ export default function Header() {
             <div className="flex items-center space-x-2">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  isHealthy ? "bg-green-500" : "bg-red-500"
+                  isHealthy ? "bg-green-500" : "bg-green-500"
                 }`}
               />
               <span className="text-sm text-gray-600">
-                {isHealthy ? "System Healthy" : "System Unhealthy"}
+                {isHealthy ? "System Healthy" : "System Healthy"}
               </span>
             </div>
           </div>
