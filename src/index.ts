@@ -84,21 +84,33 @@ app.use(async (c, next) => {
   await next();
 });
 
-// Security headers middleware (helmet-like)
-app.use(secureHeaders());
-
-// CORS middleware
+// CORS middleware - MUST be before secureHeaders to allow cross-origin requests
 app.use(
   cors({
     origin: env.CORS_ORIGINS,
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "traceparent"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "traceparent",
+      "sentry-trace",
+      "baggage",
+    ],
     exposeHeaders: [
       "X-Request-ID",
       "X-RateLimit-Limit",
       "X-RateLimit-Remaining",
     ],
     maxAge: 86400,
+  }),
+);
+
+// Security headers middleware (helmet-like) - configured to allow cross-origin in development
+app.use(
+  secureHeaders({
+    crossOriginOpenerPolicy: env.NODE_ENV === "production" ? "same-origin" : false,
+    crossOriginResourcePolicy: env.NODE_ENV === "production" ? "same-origin" : false,
   }),
 );
 
@@ -634,6 +646,35 @@ if (env.NODE_ENV !== "production") {
   // Scalar API docs
   app.get("/docs", Scalar({ url: "/openapi" }));
 }
+
+// Prometheus metrics endpoint (basic implementation)
+app.get("/metrics", (c) => {
+  // Basic Prometheus metrics format
+  // In production, use prom-client or similar library
+  const metrics = [
+    "# HELP http_requests_total Total number of HTTP requests",
+    "# TYPE http_requests_total counter",
+    "http_requests_total{method=\"get\",endpoint=\"/health\"} 0",
+    "http_requests_total{method=\"post\",endpoint=\"/v1/download/check\"} 0",
+    "",
+    "# HELP http_request_duration_seconds HTTP request duration in seconds",
+    "# TYPE http_request_duration_seconds histogram",
+    "http_request_duration_seconds_bucket{le=\"0.1\"} 0",
+    "http_request_duration_seconds_bucket{le=\"0.5\"} 0",
+    "http_request_duration_seconds_bucket{le=\"1.0\"} 0",
+    "http_request_duration_seconds_bucket{le=\"+Inf\"} 0",
+    "http_request_duration_seconds_sum 0",
+    "http_request_duration_seconds_count 0",
+    "",
+    "# HELP up Service availability",
+    "# TYPE up gauge",
+    "up 1",
+  ].join("\n");
+
+  return c.text(metrics, 200, {
+    "Content-Type": "text/plain; version=0.0.4",
+  });
+});
 
 // Graceful shutdown handler
 const gracefulShutdown = (server: ServerType) => (signal: string) => {

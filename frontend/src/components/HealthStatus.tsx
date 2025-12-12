@@ -28,8 +28,9 @@ export default function HealthStatus() {
   }
 
   const health = data?.data;
-  const isHealthy = health?.status === "ok";
-  const storageHealthy = health?.storage?.status === "ok";
+  // Backend returns: { status: "healthy", checks: { storage: "ok" } }
+  const isHealthy = health?.status === "healthy" || health?.status === "ok";
+  const storageHealthy = health?.checks?.storage === "ok" || health?.storage?.status === "ok";
 
   return (
     <div className="bg-white rounded-lg shadow p-6">

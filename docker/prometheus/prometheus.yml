@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'delineate-hackathon'
+    environment: 'development'
+
+scrape_configs:
+  # Backend API metrics
+  - job_name: 'delineate-backend'
+    static_configs:
+      - targets: ['delineate-app:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
