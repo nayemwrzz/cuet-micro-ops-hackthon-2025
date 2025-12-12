@@ -4,11 +4,11 @@ import type { ServerType } from "@hono/node-server";
 import { httpInstrumentationMiddleware } from "@hono/otel";
 import { sentry } from "@hono/sentry";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { Scalar } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -378,11 +378,25 @@ interface JobStatus {
   processingTimeMs?: number;
 }
 
+// Jaeger API response types
+interface JaegerTrace {
+  traceID: string;
+  spans: unknown[];
+  processes: Record<string, unknown>;
+}
+
+interface JaegerTracesResponse {
+  data: JaegerTrace[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
 const jobStore = new Map<number, JobStatus>();
 
 // Helper to get or create job status
 const getJobStatus = (fileId: number): JobStatus | null => {
-  return jobStore.get(fileId) || null;
+  return jobStore.get(fileId) ?? null;
 };
 
 // Helper to update job status
@@ -756,12 +770,13 @@ const downloadStatusRoute = createRoute({
   },
 });
 
-app.openapi(downloadStatusRoute, async (c) => {
+app.openapi(downloadStatusRoute, (c) => {
   try {
     const params = c.req.valid("params");
     
     // Handle case where params might be undefined
-    if (!params || typeof params.fileId === "undefined") {
+    const fileId = params?.fileId;
+    if (typeof fileId === "undefined") {
       // Try to get fileId from path parameter directly
       const fileIdParam = c.req.param("fileId");
       if (!fileIdParam) {
@@ -774,8 +789,8 @@ app.openapi(downloadStatusRoute, async (c) => {
         );
       }
       
-      const fileId = parseInt(fileIdParam, 10);
-      if (isNaN(fileId) || fileId < 10000 || fileId > 100000000) {
+      const parsedFileId = parseInt(fileIdParam, 10);
+      if (isNaN(parsedFileId) || parsedFileId < 10000 || parsedFileId > 100000000) {
         return c.json(
           {
             error: "Bad Request",
@@ -785,11 +800,11 @@ app.openapi(downloadStatusRoute, async (c) => {
         );
       }
       
-      const job = getJobStatus(fileId);
+      const job = getJobStatus(parsedFileId);
       if (!job) {
         return c.json(
           {
-            file_id: fileId,
+            file_id: parsedFileId,
             status: "not_found" as const,
           },
           200,
@@ -799,7 +814,6 @@ app.openapi(downloadStatusRoute, async (c) => {
       return c.json(job, 200);
     }
     
-    const { fileId } = params;
     const job = getJobStatus(fileId);
 
     if (!job) {
@@ -848,10 +862,10 @@ const jaegerTracesRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            data: z.array(z.any()),
-            total: z.number(),
-            limit: z.number(),
-            offset: z.number(),
+            data: z.array(z.unknown()),
+            total: z.number().optional(),
+            limit: z.number().optional(),
+            offset: z.number().optional(),
           }),
         },
       },
@@ -864,7 +878,7 @@ const jaegerTracesRoute = createRoute({
 
 app.openapi(jaegerTracesRoute, async (c) => {
   const { service, limit } = c.req.valid("query");
-  const jaegerUrl = env.JAEGER_QUERY_URL || "http://delineate-jaeger:16686";
+  const jaegerUrl = env.JAEGER_QUERY_URL ?? "http://delineate-jaeger:16686";
 
   try {
     // Jaeger API requires service parameter, so if no service provided,
@@ -876,7 +890,7 @@ app.openapi(jaegerTracesRoute, async (c) => {
         "delineate-hackathon-challenge",
       ];
       
-      let allTraces: any[] = [];
+      const allTraces: JaegerTrace[] = [];
       
       for (const svc of services) {
         try {
@@ -887,9 +901,9 @@ app.openapi(jaegerTracesRoute, async (c) => {
           
           const response = await fetch(jaegerApiUrl);
           if (response.ok) {
-            const data = await response.json();
+            const data = (await response.json()) as JaegerTracesResponse;
             if (data.data && Array.isArray(data.data)) {
-              allTraces = [...allTraces, ...data.data];
+              allTraces.push(...data.data);
               console.log(`[Jaeger Proxy] Found ${data.data.length} traces for ${svc}`);
             }
           }
@@ -929,8 +943,8 @@ app.openapi(jaegerTracesRoute, async (c) => {
       );
     }
 
-    const data = await response.json();
-    console.log(`[Jaeger Proxy] Fetched ${data.data?.length || 0} traces`);
+    const data = (await response.json()) as JaegerTracesResponse;
+    console.log(`[Jaeger Proxy] Fetched ${data.data?.length ?? 0} traces`);
     
     return c.json(data, 200);
   } catch (error) {
@@ -982,21 +996,22 @@ app.openapi(testTraceErrorRoute, async (c) => {
       span.end();
       
       return c.json({ message: "Unexpected success" }, 200);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Capture the error in the span
-      span.recordException(error);
-      span.setAttribute("error.name", error.name || "UnknownError");
-      span.setAttribute("error.message", error.message || String(error));
-      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      span.recordException(errorObj);
+      span.setAttribute("error.name", errorObj.name ?? "UnknownError");
+      span.setAttribute("error.message", errorObj.message ?? String(error));
+      span.setStatus({ code: SpanStatusCode.ERROR, message: errorObj.message });
       span.end();
       
-      console.error("[Test Trace] Error captured:", error);
+      console.error("[Test Trace] Error captured:", errorObj);
       
       return c.json(
         {
           error: "Intentional Error for Tracing Demo",
-          message: error.message || "Connection failed",
-          type: error.name || "NetworkError",
+          message: errorObj.message ?? "Connection failed",
+          type: errorObj.name ?? "NetworkError",
           traceId: span.spanContext().traceId,
         },
         500,
@@ -1062,15 +1077,16 @@ app.openapi(testTraceSuccessRoute, async (c) => {
         },
         200,
       );
-    } catch (error: any) {
-      span.recordException(error);
-      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      span.recordException(errorObj);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: errorObj.message });
       span.end();
       
       return c.json(
         {
           error: "Unexpected error",
-          message: error.message,
+          message: errorObj.message,
         },
         500,
       );
