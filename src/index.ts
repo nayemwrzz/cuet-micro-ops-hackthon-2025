@@ -92,7 +92,7 @@ app.use(
   cors({
     origin: env.CORS_ORIGINS,
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "traceparent"],
     exposeHeaders: [
       "X-Request-ID",
       "X-RateLimit-Limit",
@@ -666,9 +666,10 @@ const server = serve(
   {
     fetch: app.fetch,
     port: env.PORT,
+    hostname: "0.0.0.0", // Listen on all interfaces to accept connections from outside Docker
   },
   (info) => {
-    console.log(`Server is running on http://localhost:${String(info.port)}`);
+    console.log(`Server is running on http://0.0.0.0:${String(info.port)}`);
     console.log(`Environment: ${env.NODE_ENV}`);
     if (env.NODE_ENV !== "production") {
       console.log(`API docs: http://localhost:${String(info.port)}/docs`);

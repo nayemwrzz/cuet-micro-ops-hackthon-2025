@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { formatDate } from "../lib/utils";
-import * as Sentry from "@sentry/react";
 
 interface ErrorEvent {
   id: string;
@@ -15,10 +14,9 @@ export default function ErrorLog() {
   const [errors, setErrors] = useState<ErrorEvent[]>([]);
   const [selectedError, setSelectedError] = useState<ErrorEvent | null>(null);
 
-  // Listen for Sentry errors (in production, you'd fetch from Sentry API)
+  // Listen for Sentry errors (stored by API interceptor in localStorage)
   useEffect(() => {
-    // For demo purposes, we'll track errors manually
-    // In production, integrate with Sentry API: https://docs.sentry.io/api/events/list-a-projects-events/
+    // Load errors from localStorage (stored by API interceptor)
     const loadErrors = () => {
       const storedErrors = localStorage.getItem("sentry_errors");
       if (storedErrors) {
@@ -30,31 +28,13 @@ export default function ErrorLog() {
       }
     };
 
+    // Load errors on mount
     loadErrors();
 
     // Poll for new errors (stored by API interceptor)
     const interval = setInterval(loadErrors, 1000);
 
     return () => clearInterval(interval);
-
-    // Listen for new errors captured by Sentry
-    const originalCaptureException = Sentry.captureException;
-    Sentry.captureException = function (...args) {
-      const errorEvent: ErrorEvent = {
-        id: Date.now().toString(),
-        message: args[0]?.message || "Unknown error",
-        level: "error",
-        timestamp: new Date().toISOString(),
-        tags: args[1]?.tags,
-        extra: args[1]?.extra,
-      };
-      setErrors((prev) => [errorEvent, ...prev].slice(0, 50)); // Keep last 50
-      localStorage.setItem(
-        "sentry_errors",
-        JSON.stringify([errorEvent, ...errors].slice(0, 50)),
-      );
-      return originalCaptureException.apply(this, args);
-    };
   }, []);
 
   const getLevelColor = (level: string) => {

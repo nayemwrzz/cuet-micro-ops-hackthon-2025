@@ -10,39 +10,53 @@ export const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  timeout: 30000, // 30 second timeout
+  withCredentials: false, // Don't send cookies
 });
 
 // Request interceptor: Add trace context
-api.interceptors.request.use((config) => {
-  try {
-    const tracer = trace.getTracer("delineate-frontend");
-    const activeSpan = trace.getActiveSpan();
+api.interceptors.request.use(
+  (config) => {
+    try {
+      const tracer = trace.getTracer("delineate-frontend");
+      const activeSpan = trace.getActiveSpan();
 
-    if (activeSpan) {
-      const spanContext = activeSpan.spanContext();
-      if (spanContext.isValid && spanContext.traceId) {
-        // Format as W3C Trace Context
-        const traceFlags = spanContext.traceFlags || 0x01;
-        const traceparent = `00-${spanContext.traceId}-${spanContext.spanId || "0000000000000000"}-0${traceFlags.toString(16)}`;
-        config.headers["traceparent"] = traceparent;
+      if (activeSpan) {
+        const spanContext = activeSpan.spanContext();
+        if (spanContext.isValid && spanContext.traceId) {
+          // Format as W3C Trace Context
+          const traceFlags = spanContext.traceFlags || 0x01;
+          const traceparent = `00-${spanContext.traceId}-${spanContext.spanId || "0000000000000000"}-0${traceFlags.toString(16)}`;
+          config.headers["traceparent"] = traceparent;
+        }
+      } else {
+        // Create a new span if no active span
+        const span = tracer.startSpan("http.request");
+        const spanContext = span.spanContext();
+        if (spanContext.isValid && spanContext.traceId) {
+          const traceFlags = spanContext.traceFlags || 0x01;
+          const traceparent = `00-${spanContext.traceId}-${spanContext.spanId || "0000000000000000"}-0${traceFlags.toString(16)}`;
+          config.headers["traceparent"] = traceparent;
+        }
+        span.end();
       }
-    } else {
-      // Create a new span if no active span
-      const span = tracer.startSpan("http.request");
-      const spanContext = span.spanContext();
-      if (spanContext.isValid && spanContext.traceId) {
-        const traceFlags = spanContext.traceFlags || 0x01;
-        const traceparent = `00-${spanContext.traceId}-${spanContext.spanId || "0000000000000000"}-0${traceFlags.toString(16)}`;
-        config.headers["traceparent"] = traceparent;
-      }
-      span.end();
+    } catch (error) {
+      console.warn("Failed to add trace context:", error);
     }
-  } catch (error) {
-    console.warn("Failed to add trace context:", error);
-  }
 
-  return config;
-});
+    // Log request for debugging
+    console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`, {
+      baseURL: config.baseURL,
+      headers: config.headers,
+    });
+
+    return config;
+  },
+  (error) => {
+    console.error("[API] Request error:", error);
+    return Promise.reject(error);
+  }
+);
 
 // Response interceptor: Handle errors and capture to Sentry
 api.interceptors.response.use(
@@ -93,21 +107,44 @@ api.interceptors.response.use(
         console.warn("Failed to store error in localStorage:", e);
       }
     } else if (error.request) {
+      // Network error - request was made but no response received
+      const errorMessage = error.message || "Network Error";
+      const apiUrl = error.config?.baseURL || API_URL;
+      
       Sentry.captureException(error, {
         tags: {
           error_type: "network_error",
+          endpoint: error.config?.url || "",
+          method: error.config?.method || "",
+          api_url: apiUrl,
+        },
+        extra: {
+          message: errorMessage,
+          code: error.code,
+          config: {
+            url: error.config?.url,
+            method: error.config?.method,
+            baseURL: error.config?.baseURL,
+          },
         },
       });
 
-      // Store network error
+      // Store network error with more details
       try {
         const errorEvent = {
           id: Date.now().toString(),
-          message: "Network Error",
+          message: `${errorMessage} - Unable to reach ${apiUrl}`,
           level: "error",
           timestamp: new Date().toISOString(),
           tags: {
             error_type: "network_error",
+            endpoint: error.config?.url || "",
+            method: error.config?.method || "",
+            api_url: apiUrl,
+          },
+          extra: {
+            code: error.code,
+            message: errorMessage,
           },
         };
         const storedErrors = localStorage.getItem("sentry_errors");

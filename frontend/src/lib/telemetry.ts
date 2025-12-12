@@ -1,10 +1,11 @@
-import { WebSDK } from "@opentelemetry/sdk-web";
+import { WebTracerProvider } from "@opentelemetry/sdk-trace-web";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
-import { Resource } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
 
-let sdk: WebSDK | null = null;
+let tracerProvider: WebTracerProvider | null = null;
 
 export function initOpenTelemetry() {
   const otelEndpoint = import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT;
@@ -15,13 +16,19 @@ export function initOpenTelemetry() {
   }
 
   try {
-    sdk = new WebSDK({
-      resource: new Resource({
+    tracerProvider = new WebTracerProvider({
+      resource: resourceFromAttributes({
         [ATTR_SERVICE_NAME]: "delineate-observability-dashboard",
       }),
-      traceExporter: new OTLPTraceExporter({
+    });
+
+    tracerProvider.addSpanProcessor(
+      new OTLPTraceExporter({
         url: `${otelEndpoint}/v1/traces`,
-      }),
+      })
+    );
+
+    registerInstrumentations({
       instrumentations: [
         new FetchInstrumentation({
           ignoreUrls: [
@@ -33,7 +40,7 @@ export function initOpenTelemetry() {
       ],
     });
 
-    sdk.start();
+    tracerProvider.register();
     console.log("OpenTelemetry initialized successfully");
   } catch (error) {
     console.error("Failed to initialize OpenTelemetry:", error);
@@ -41,8 +48,8 @@ export function initOpenTelemetry() {
 }
 
 export function shutdownOpenTelemetry() {
-  if (sdk) {
-    sdk.shutdown();
-    sdk = null;
+  if (tracerProvider) {
+    tracerProvider.shutdown();
+    tracerProvider = null;
   }
 }
