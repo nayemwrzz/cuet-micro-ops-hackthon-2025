@@ -1,21 +1,37 @@
-# dev
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
 .yarn/
 !.yarn/releases
-.vscode/*
-!.vscode/launch.json
-!.vscode/*.code-snippets
-.idea/workspace.xml
-.idea/usage.statistics.xml
-.idea/shelf
+package-lock.json.backup
 
-# deps
-node_modules/
-
-# env
+# Environment variables (CRITICAL - contains secrets)
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
 .env.production
+.env.backup
 
-# logs
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.next/
+out/
+.nuxt/
+
+# Testing
+coverage/
+.nyc_output/
+*.test.js.snap
+test-results/
+playwright-report/
+
+# Logs
 logs/
 *.log
 npm-debug.log*
@@ -23,7 +39,80 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.log.*
 
-# misc
+# IDE & Editor files
+.vscode/*
+!.vscode/launch.json
+!.vscode/*.code-snippets
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+*.dockerignore.backup
+
+# Data & Volumes
 data/
+*.sqlite
+*.sqlite3
+*.db
+volumes/
+minio-data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+.cache/
+
+# Secrets & Credentials (CRITICAL)
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+credentials/
+*.secret
+*.private
+
+# Frontend build artifacts (for Challenge 4)
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/.vite/
+
+# Package manager
+.pnp.*
+yarn-error.log
+.npm
+.eslintcache
+.stylelintcache
+
+# Misc
+*.pid
+*.seed
+*.pid.lock

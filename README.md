@@ -542,7 +542,8 @@ npm run docker:prod  # Start with Docker (production)
 │   └── compose.prod.yml  # Production Docker Compose
 ├── .github/
 │   └── workflows/
-│       └── ci.yml        # GitHub Actions CI pipeline
+│       ├── ci.yml        # GitHub Actions CI pipeline
+│       └── security.yml  # Security scanning workflow
 ├── package.json
 ├── tsconfig.json
 └── eslint.config.mjs
@@ -558,6 +559,181 @@ npm run docker:prod  # Start with Docker (production)
 - Path traversal prevention for S3 keys
 - Graceful shutdown handling
 
+---
+
+## CI/CD Pipeline
+
+### Overview
+
+This project uses **GitHub Actions** for continuous integration and continuous deployment. The CI/CD pipeline automatically runs on every push and pull request to ensure code quality, run tests, and build Docker images.
+
+**Pipeline Status**: [![CI](https://github.com/bongodev/cuet-micro-ops-hackthon-2025/workflows/CI/badge.svg)](https://github.com/bongodev/cuet-micro-ops-hackthon-2025/actions)
+
+### Pipeline Stages
+
+The CI pipeline consists of the following stages:
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│    Lint     │───▶│    Test     │───▶│    Build    │───▶│   Deploy    │
+│  (ESLint,   │    │   (E2E)     │    │  (Docker)   │    │ (Optional)  │
+│  Prettier)  │    │             │    │             │    │             │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+```
+
+1. **🔍 Lint & Format**: Runs ESLint and Prettier to ensure code quality
+2. **🧪 E2E Tests**: Runs end-to-end tests against the API
+3. **🐳 Build**: Builds production Docker image with caching
+4. **🚀 Deploy**: Optional deployment to production (only on `main`/`master`)
+
+### When Pipeline Runs
+
+- ✅ On every push to `main` or `master` branch
+- ✅ On every pull request targeting `main` or `master`
+- 🔒 Security scans also run weekly (Mondays) via scheduled workflow
+
+### Running Tests Locally
+
+Before pushing your code, run these commands locally to ensure your changes pass CI:
+
+```bash
+# 1. Lint your code
+npm run lint
+
+# 2. Check code formatting
+npm run format:check
+
+# 3. Run E2E tests
+npm run test:e2e
+
+# 4. Build Docker image (optional)
+docker build -f docker/Dockerfile.prod -t delineate-hackathon-challenge:local .
+```
+
+**Pro Tip**: Install the pre-commit hooks or run these commands before committing to catch issues early.
+
+### CI/CD Features
+
+#### ✅ Dependency Caching
+
+- npm dependencies are cached for faster builds
+- Docker layers are cached between runs
+- Significantly reduces pipeline execution time
+
+#### ✅ Fail-Fast Behavior
+
+- If linting fails, tests and build stages are skipped
+- If tests fail, build and deploy stages are skipped
+- Saves CI minutes and provides quick feedback
+
+#### ✅ Test Result Reporting
+
+- Test summaries appear in GitHub Actions UI
+- Job summaries provide quick status overview
+- Detailed logs available for debugging
+
+#### ✅ Security Scanning
+
+A separate security workflow (`.github/workflows/security.yml`) runs:
+
+- **CodeQL**: Static code analysis for security vulnerabilities
+- **Trivy**: Container image vulnerability scanning
+- **npm audit**: Dependency vulnerability checks
+
+Security scans run on:
+
+- Push and pull requests
+- Weekly schedule (Mondays at 00:00 UTC)
+- Manual trigger via workflow dispatch
+
+#### ✅ Notifications (Optional)
+
+Configure Slack or Discord notifications to be alerted of CI status:
+
+**Slack Setup:**
+
+1. Create a Slack webhook URL
+2. Add `SLACK_WEBHOOK_URL` secret to GitHub repository settings
+3. Notifications will be sent to the configured channel
+
+**Discord Setup:**
+
+1. Create a Discord webhook URL
+2. Add `DISCORD_WEBHOOK_URL` secret to GitHub repository settings
+3. Notifications will be sent to the configured channel
+
+**Note**: Notifications are optional and won't fail the CI pipeline if not configured.
+
+### Deployment
+
+The deployment stage is structured and ready but currently disabled for safety. To enable deployment:
+
+#### Option 1: Container Registry (Docker Hub, GHCR)
+
+1. Configure registry credentials in GitHub secrets
+2. Update deployment job in `.github/workflows/ci.yml`
+3. Set deployment steps to `if: true`
+
+#### Option 2: Cloud Platforms (Railway, Render, Fly.io)
+
+- Use platform-specific GitHub integrations
+- Configure via platform dashboards
+- Add deployment steps to CI workflow
+
+#### Option 3: VM Deployment (SSH)
+
+1. Add SSH secrets: `SSH_HOST`, `SSH_USERNAME`, `SSH_PRIVATE_KEY`
+2. Use `appleboy/ssh-action` or similar in deployment job
+3. Add commands to pull image and restart services
+
+**See deployment job comments in `.github/workflows/ci.yml` for detailed setup instructions.**
+
+### Branch Protection Recommendations
+
+For production-ready repositories, configure branch protection rules in GitHub:
+
+1. **Required Status Checks**: Require CI to pass before merging
+   - Enable: `CI` workflow must pass
+   - Enable: `Security Scanning` workflow (optional but recommended)
+
+2. **Required Reviews**: Require at least 1 approval before merging
+
+3. **No Force Push**: Prevent force pushes to protected branches
+
+4. **No Deletion**: Prevent deletion of protected branches
+
+To configure:
+
+- Go to Repository Settings → Branches → Add rule
+- Configure rules for `main`/`master` branch
+
+### Debugging Failed Pipelines
+
+If a pipeline fails:
+
+1. **Check the failed job logs**: Click on the failed job in GitHub Actions
+2. **Run tests locally**: Reproduce the issue on your machine
+3. **Check environment variables**: Ensure required secrets are configured
+4. **Review recent changes**: Check if recent code changes introduced the issue
+
+Common issues:
+
+- **Lint failures**: Run `npm run lint:fix` locally
+- **Format failures**: Run `npm run format` locally
+- **Test failures**: Run `npm run test:e2e` locally to debug
+- **Build failures**: Check Dockerfile and dependencies
+
+### CI/CD Configuration Files
+
+- **Main CI Pipeline**: `.github/workflows/ci.yml`
+- **Security Scanning**: `.github/workflows/security.yml`
+
+For questions or issues with the CI/CD pipeline, please open an issue or contact the maintainers.
+
+---
+
 ## License
 
 MIT
+
+YOYO

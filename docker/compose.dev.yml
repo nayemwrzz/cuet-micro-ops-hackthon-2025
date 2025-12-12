@@ -1,6 +1,49 @@
 name: delineate
 
 services:
+  # MinIO S3-compatible storage service
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000" # API endpoint
+      - "9001:9001" # Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+    networks:
+      - default
+
+  # MinIO client for bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO to be ready...';
+      sleep 5;
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      echo 'Creating downloads bucket...';
+      mc mb myminio/downloads || echo 'Bucket may already exist';
+      echo 'Setting bucket policy to download (public read)...';
+      mc anonymous set download myminio/downloads || echo 'Policy set or already configured';
+      echo 'Bucket initialization complete!';
+      exit 0;
+      "
+    networks:
+      - default
+
   delineate-app:
     build:
       context: ..
@@ -14,8 +57,20 @@ services:
     environment:
       - NODE_ENV=development
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://delineate-jaeger:4318
+      # S3 Configuration for MinIO
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY_ID=minioadmin
+      - S3_SECRET_ACCESS_KEY=minioadmin
+      - S3_BUCKET_NAME=downloads
+      - S3_FORCE_PATH_STYLE=true
+      - S3_REGION=us-east-1
     depends_on:
-      - delineate-jaeger
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      delineate-jaeger:
+        condition: service_started
 
   delineate-jaeger:
     image: jaegertracing/all-in-one:latest
@@ -24,3 +79,6 @@ services:
       - "4318:4318"
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+
+volumes:
+  minio-data:

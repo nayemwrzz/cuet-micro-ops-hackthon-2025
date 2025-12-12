@@ -1,0 +1,113 @@
+name: 🔒 Security Scanning
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Run security scans weekly (Mondays at 00:00 UTC)
+    - cron: "0 0 * * 1"
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  codeql-analysis:
+    name: 🔍 CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["javascript"]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Optional: Add queries to run additional security checks
+          # queries: security-extended,security-and-quality
+
+      - name: 🔄 Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: 🔎 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  trivy-scan:
+    name: 🐳 Trivy Docker Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Build Docker image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.prod
+          push: false
+          tags: delineate-hackathon-challenge:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🔒 Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "delineate-hackathon-challenge:scan"
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: 📊 Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: 📋 Trivy Scan Summary
+        if: always()
+        run: |
+          echo "## 🔒 Trivy Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`delineate-hackathon-challenge:scan\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scan Type**: Container vulnerability scanning" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed results in the Security tab of this repository." >> $GITHUB_STEP_SUMMARY
+
+  npm-audit:
+    name: 📦 npm Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: "npm"
+
+      - name: 📚 Install dependencies
+        run: npm ci
+
+      - name: 🔒 Run npm audit
+        continue-on-error: true # Don't fail on vulnerabilities (report only)
+        run: |
+          npm audit --audit-level=moderate || true
+
+      - name: 📊 npm Audit Summary
+        if: always()
+        run: |
+          echo "## 📦 npm Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Note**: This scan reports vulnerabilities but doesn't fail the build." >> $GITHUB_STEP_SUMMARY
+          echo "Review results above and update dependencies as needed." >> $GITHUB_STEP_SUMMARY

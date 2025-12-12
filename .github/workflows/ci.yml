@@ -6,70 +6,231 @@ on:
   pull_request:
     branches: [main, master]
 
+# Set default concurrency to cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
-    name: Lint
-    runs-on: ubuntu-24.04
-    container:
-      image: node:24-slim
+    name: 🔍 Lint & Format
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: "npm"
+
+      - name: 📚 Install dependencies
         run: npm ci
 
-      - name: Run ESLint
+      - name: 🔍 Run ESLint
         run: npm run lint
 
-      - name: Check formatting
+      - name: ✨ Check code formatting
         run: npm run format:check
 
   test:
-    name: E2E Tests
-    runs-on: ubuntu-24.04
+    name: 🧪 E2E Tests
+    runs-on: ubuntu-latest
     needs: lint
-    container:
-      image: node:24-slim
     steps:
-      - name: Checkout
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: "npm"
+
+      - name: 📚 Install dependencies
         run: npm ci
 
-      - name: Run E2E tests
+      - name: 🧪 Run E2E tests
         run: npm run test:e2e
         env:
           NODE_ENV: development
           PORT: 3000
+          # S3 Configuration - flexible for Challenge 1 (MinIO integration)
+          # These work with or without S3 storage (tests accept both "ok" and "error" status)
           S3_REGION: us-east-1
-          S3_BUCKET_NAME: ""
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT || '' }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID || '' }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY || '' }}
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME || '' }}
           S3_FORCE_PATH_STYLE: "true"
+          # Observability (optional)
           SENTRY_DSN: ""
           OTEL_EXPORTER_OTLP_ENDPOINT: ""
+          # Rate Limiting
           REQUEST_TIMEOUT_MS: "30000"
           RATE_LIMIT_WINDOW_MS: "60000"
           RATE_LIMIT_MAX_REQUESTS: "100"
           CORS_ORIGINS: "*"
+          # Download delay simulation (reduced for faster CI)
+          DOWNLOAD_DELAY_ENABLED: "true"
+          DOWNLOAD_DELAY_MIN_MS: "1000"
+          DOWNLOAD_DELAY_MAX_MS: "3000"
+
+      - name: 📊 Test Summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow**: ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
 
   build:
-    name: Build Docker Image
-    runs-on: ubuntu-24.04
+    name: 🐳 Build Docker Image
+    runs-on: ubuntu-latest
     needs: test
     steps:
-      - name: Checkout
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: 🏗️ Build Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.prod
           push: false
-          tags: delineate-hackathon-challenge:${{ github.sha }}
+          tags: |
+            delineate-hackathon-challenge:${{ github.sha }}
+            delineate-hackathon-challenge:${{ github.ref_name == 'main' || github.ref_name == 'master' && 'latest' || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: 📊 Build Summary
+        if: always()
+        run: |
+          echo "## 🐳 Docker Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag**: \`delineate-hackathon-challenge:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: linux/amd64" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    # Only deploy on push to main/master (not on PRs)
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ secrets.DEPLOYMENT_URL || '' }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Login to Container Registry (Optional)
+        # Uncomment and configure if you want to push to a registry
+        # Examples: Docker Hub, GitHub Container Registry (GHCR), AWS ECR, etc.
+        if: false # Set to true and configure secrets below to enable
+        uses: docker/login-action@v3
+        with:
+          # For Docker Hub:
+          # username: ${{ secrets.DOCKER_USERNAME }}
+          # password: ${{ secrets.DOCKER_PASSWORD }}
+          # For GHCR:
+          # registry: ghcr.io
+          # username: ${{ github.actor }}
+          # password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏗️ Build and Push Docker Image (Optional)
+        if: false # Set to true if registry login is configured above
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.prod
+          push: true
+          tags: |
+            # Example tags - adjust based on your registry:
+            # docker.io/your-username/delineate-hackathon:${{ github.sha }}
+            # ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 📝 Deployment Options Documentation
+        run: |
+          echo "## 🚀 Deployment Options" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configured Deployment Options:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Option 1: Container Registry (Docker Hub, GHCR, etc.)" >> $GITHUB_STEP_SUMMARY
+          echo "1. Set \`deploy\` job steps above to \`if: true\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Configure registry secrets in GitHub repository settings" >> $GITHUB_STEP_SUMMARY
+          echo "3. Update tags in build-push-action" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Option 2: Railway Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "1. Add Railway CLI action or use Railway GitHub integration" >> $GITHUB_STEP_SUMMARY
+          echo "2. Set \`RAILWAY_TOKEN\` secret" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Option 3: Render Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "1. Use Render GitHub integration or add manual deploy script" >> $GITHUB_STEP_SUMMARY
+          echo "2. Configure via Render dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Option 4: VM Deployment (SSH)" >> $GITHUB_STEP_SUMMARY
+          echo "1. Add SSH deployment step using \`appleboy/ssh-action\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Set secrets: \`SSH_HOST\`, \`SSH_USERNAME\`, \`SSH_PRIVATE_KEY\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Add commands to pull image and restart services" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: Deployment steps are currently disabled (set to \`if: false\`) to prevent accidental deployments." >> $GITHUB_STEP_SUMMARY
+          echo "Configure the steps above and set conditions to \`if: true\` when ready to deploy." >> $GITHUB_STEP_SUMMARY
+
+      - name: ✅ Deployment Placeholder
+        run: |
+          echo "🚀 Deployment job structure is ready!"
+          echo "Configure deployment steps above based on your target platform."
+          echo "See deployment documentation in README.md for detailed instructions."
+
+  notify:
+    name: 📢 Notifications
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, deploy]
+    # Only notify on workflow completion (success or failure)
+    if: always()
+    steps:
+      - name: 📢 Slack Notification (Optional)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            🚀 CI Pipeline Status: ${{ job.status }}
+            Workflow: ${{ github.workflow }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.event.head_commit.message }}
+            Author: ${{ github.event.head_commit.author.name }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          channel: "#ci-cd"
+        continue-on-error: true # Don't fail CI if notification fails
+
+      - name: 📢 Discord Notification (Optional)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        continue-on-error: true # Don't fail CI if notification fails
+        run: |
+          if [ -n "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then
+            STATUS="${{ job.status }}"
+            STATUS_EMOJI="✅"
+            if [ "$STATUS" != "success" ]; then
+              STATUS_EMOJI="❌"
+            fi
+            
+            curl -H "Content-Type: application/json" \
+              -d "{\"content\": \"${STATUS_EMOJI} **CI Pipeline**: ${STATUS}\\n**Workflow**: ${{ github.workflow }}\\n**Branch**: ${{ github.ref_name }}\\n**Commit**: ${{ github.event.head_commit.message }}\\n**View Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
+          else
+            echo "Discord webhook URL not configured. Skipping notification."
+          fi
